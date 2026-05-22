@@ -21,18 +21,22 @@ type Phase =
   | "idle"
   | "presigning"
   | "uploading"
-  | "scanning"
-  | "decoding"
-  | "writing"
+  | "fetch"
+  | "vision"
+  | "verdict"
+  | "score"
+  | "persist"
   | "done"
   | "error";
 
 const PHASES: { id: Exclude<Phase, "idle" | "done" | "error">; label: string }[] = [
   { id: "presigning", label: "Negotiating upload URL" },
   { id: "uploading", label: "Ingesting screenshot" },
-  { id: "scanning", label: "OCR + structure scan" },
-  { id: "decoding", label: "Smart-money decode" },
-  { id: "writing", label: "Composing autopsy" },
+  { id: "fetch", label: "Resolving in storage" },
+  { id: "vision", label: "Vision pass · OCR + structure" },
+  { id: "verdict", label: "Composing forensic verdict" },
+  { id: "score", label: "Scoring discipline & risk" },
+  { id: "persist", label: "Recording in journal" },
 ];
 
 interface PresignBody {
@@ -79,62 +83,66 @@ export function UploadClient() {
   useEffect(() => {
     if (!file) return;
     let cancelled = false;
+    const ac = new AbortController();
     (async () => {
       try {
+        // Step 1: presign
         setPhase("presigning");
         const presignRes = await fetch("/api/uploads", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ contentType: file.type, size: file.size }),
+          signal: ac.signal,
         });
         if (!presignRes.ok) throw new Error(`presign_failed:${presignRes.status}`);
         const presign = (await presignRes.json()) as PresignBody;
         if (cancelled) return;
 
+        // Step 2: upload (or fake progress in demo)
         setPhase("uploading");
         if (presign.uploadUrl) {
           await uploadWithProgress(presign.uploadUrl, file.raw, (p) => setProgress(p));
         } else {
-          // Demo mode: simulate progress so the UI still feels real.
           await fakeProgress((p) => setProgress(p));
         }
         if (cancelled) return;
 
-        setPhase("scanning");
-        await wait(900);
-        if (cancelled) return;
-        setPhase("decoding");
-        await wait(1100);
-        if (cancelled) return;
-        setPhase("writing");
-
+        // Step 3: stream the autopsy pipeline
         const autopsyRes = await fetch("/api/autopsy", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            uploadId: presign.key,
-            symbol: "BTCUSDT",
-            timeframe: "1H",
-            direction: "SHORT",
-          }),
+          body: JSON.stringify({ uploadId: presign.key }),
+          signal: ac.signal,
         });
+
         if (autopsyRes.status === 402) {
           const data = await autopsyRes.json();
           throw new Error(data.message ?? "Quota exceeded — upgrade to continue.");
         }
-        if (!autopsyRes.ok) throw new Error(`autopsy_failed:${autopsyRes.status}`);
-        const data = (await autopsyRes.json()) as AutopsyResponse;
-        if (cancelled) return;
-        setReport(data);
-        setPhase("done");
+        if (!autopsyRes.ok || !autopsyRes.body) {
+          throw new Error(`autopsy_failed:${autopsyRes.status}`);
+        }
+
+        await readNdjson(autopsyRes.body, (e) => {
+          if (cancelled) return;
+          if (e.event === "progress") {
+            setPhase(e.phase);
+          } else if (e.event === "done") {
+            setReport(e.report);
+            setPhase("done");
+          } else if (e.event === "error") {
+            throw new Error(e.message);
+          }
+        });
       } catch (e) {
-        if (cancelled) return;
+        if (cancelled || (e as { name?: string })?.name === "AbortError") return;
         setError(e instanceof Error ? e.message : "unknown_error");
         setPhase("error");
       }
     })();
     return () => {
       cancelled = true;
+      ac.abort();
     };
   }, [file]);
 
@@ -439,25 +447,72 @@ function wait(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
+/**
+ * Consume an NDJSON stream from the autopsy endpoint. One JSON object
+ * per line. Calls `onEvent` per parsed event. Throws if the upstream
+ * emits an error event.
+ */
+type ServerEvent =
+  | { event: "progress"; phase: Phase; pct: number; message: string }
+  | { event: "done"; report: AutopsyResponse }
+  | { event: "error"; message: string };
+
+async function readNdjson(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (e: ServerEvent) => void,
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      try {
+        onEvent(JSON.parse(line) as ServerEvent);
+      } catch (err) {
+        console.error("[ndjson] parse failed", err, line);
+      }
+    }
+  }
+  if (buf.trim()) {
+    try {
+      onEvent(JSON.parse(buf.trim()) as ServerEvent);
+    } catch {
+      /* ignore trailing junk */
+    }
+  }
+}
+
 function Working({ phase }: { phase: Phase }) {
   const lines: Partial<Record<Phase, string[]>> = {
     presigning: ["[ ok ] Stream opened", "[ ok ] Negotiating presigned PUT"],
     uploading: ["[ ok ] Streaming bytes ...", "[ ok ] Hash 0x9a3f7c…"],
-    scanning: [
-      "[ ok ] OCR pass · 14 candles · 1H · BTCUSDT",
-      "[ ok ] Range high 67,612 · range low 66,820",
-      "[ ok ] Detected BOS @ 67,420 · CHOCH @ 67,580",
-      "[ ! ] Stop hunt above ASIA HIGH (67,612)",
-      "[ ok ] Order block 67,290–67,355 (4H bullish)",
+    fetch: ["[ ok ] Resolving upload key", "[ ok ] Fetched · 1.4MB"],
+    vision: [
+      "[ ok ] Vision model engaged",
+      "[ ok ] OCR pass · scanning candles",
+      "[ ! ] Identifying liquidity zones",
+      "[ ok ] Marking BOS / CHOCH events",
+      "[ ok ] Reading trade marks (entry/stop/target)",
     ],
-    decoding: [
-      "[ dx ] Buy-side liquidity raid → reversal",
-      "[ dx ] Premium of 4H dealing range",
-      "[ dx ] Equal lows below = sell-side draw",
-      "[ ! ] Inducement low ignored at 67,355",
-      "[ dx ] Psychology: revenge entry · conf 0.81",
+    verdict: [
+      "[ dx ] Cross-referencing structure → behavioural patterns",
+      "[ dx ] Drafting verdict",
+      "[ ! ] Linking concepts",
+      "[ dx ] Composing improvement plan",
     ],
-    writing: ["» Composing verdict ...", "» Drafting improvement plan ...", "» Linking lessons ..."],
+    score: [
+      "[ ok ] Applying flag weights",
+      "[ ok ] Computing structural bonus",
+      "[ ok ] Risk-adjusted score finalised",
+    ],
+    persist: ["» Writing Trade row ...", "» Writing Autopsy row ...", "» Indexing tags ..."],
   };
   return (
     <div className="space-y-1 leading-6 text-void-800">
@@ -502,6 +557,24 @@ function Report({ data }: { data: AutopsyResponse }) {
 
   return (
     <div className="space-y-6">
+      {/* Verdict / cost meta strip */}
+      <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest2">
+        {data.mock && (
+          <span className="chip border-signal-amber/40 text-signal-amber">
+            mock pipeline · set OPENAI_API_KEY for real verdicts
+          </span>
+        )}
+        {data.cost && !data.mock && (
+          <span className="chip border-signal-cyan/40 text-signal-cyan">
+            cost · ${(data.cost.microUsd / 1_000_000).toFixed(4)} ·{" "}
+            {data.cost.modelVision === data.cost.modelVerdict
+              ? data.cost.modelVision
+              : `${data.cost.modelVision} + ${data.cost.modelVerdict}`}
+          </span>
+        )}
+        <span className="chip">id · {data.id}</span>
+      </div>
+
       <div className="grid grid-cols-1 gap-px bg-void-300/60 sm:grid-cols-3">
         <div className="bg-void-50/60 p-5">
           <div className="font-mono text-[10px] uppercase tracking-widest2 text-void-700">
@@ -519,7 +592,9 @@ function Report({ data }: { data: AutopsyResponse }) {
           <div className="font-mono text-[10px] uppercase tracking-widest2 text-void-700">
             Result
           </div>
-          <div className="mt-2 font-display text-3xl tracking-wide text-signal-red">−4.2R</div>
+          <div className="mt-2 font-display text-3xl tracking-wide text-signal-red">
+            {extractRr(data.summary, data.score)}
+          </div>
           {data.rebuyZone && (
             <div className="mt-3 font-mono text-[11px]">
               <span className="text-void-700">Rebuy zone</span>{" "}
@@ -559,6 +634,19 @@ function Report({ data }: { data: AutopsyResponse }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Extract a "result" R-multiple from the summary text when present
+ * (e.g. "+2.6R", "-4.2R"). Falls back to a label keyed off the score
+ * when no R-multiple is mentioned.
+ */
+function extractRr(summary: string, score: number): string {
+  const m = summary.match(/[+-]?\d+(?:\.\d+)?R\b/);
+  if (m) return m[0].replace("-", "−");
+  if (score >= 75) return "WIN";
+  if (score >= 50) return "BREAK-EVEN";
+  return "LOSS";
 }
 
 function Flag({ flag }: { flag: AutopsyFlag }) {

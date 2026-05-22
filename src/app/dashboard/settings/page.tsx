@@ -47,6 +47,11 @@ export default async function SettingsPage() {
               value={env.s3.enabled ? "Connected" : "Demo (local blobs)"}
               tone={env.s3.enabled ? "green" : undefined}
             />
+            <Field
+              label="AI engine"
+              value={env.openai.enabled ? "OpenAI · gpt-4o" : "Mock pipeline"}
+              tone={env.openai.enabled ? "green" : undefined}
+            />
             <Field label="API keys" value="0 / 3 in use" />
           </Panel>
 

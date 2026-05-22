@@ -17,14 +17,22 @@ const CLERK_ENABLED = Boolean(
 
 /**
  * When Clerk is configured, protected routes require a valid session.
- * When Clerk is NOT configured (demo mode), the middleware no-ops so
- * the dashboard is reachable for previews. The `getSessionUser()` helper
+ * When Clerk is NOT configured (demo mode), the middleware no-ops so the
+ * dashboard is reachable for previews. The `getSessionUser()` helper
  * still returns a deterministic demo identity in that mode.
+ *
+ * IMPORTANT: We branch at module-level rather than inside the
+ * clerkMiddleware handler. Clerk validates the publishable key inside its
+ * wrapper before our handler runs, so an inner if-check throws regardless.
+ * Returning a plain noop function in demo mode bypasses Clerk entirely.
  */
-export default clerkMiddleware(async (auth, req: NextRequest) => {
-  if (!CLERK_ENABLED) return NextResponse.next();
+const realMiddleware = clerkMiddleware(async (auth, req: NextRequest) => {
   if (PROTECTED(req)) await auth.protect();
 });
+
+const demoMiddleware = (_req: NextRequest) => NextResponse.next();
+
+export default CLERK_ENABLED ? realMiddleware : demoMiddleware;
 
 export const config = {
   matcher: [
