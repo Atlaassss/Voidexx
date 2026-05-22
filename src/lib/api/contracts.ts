@@ -40,6 +40,14 @@ export interface AutopsyResponse {
   structure?: Record<string, unknown>;
   smartMoney?: Record<string, unknown>;
   psychology?: Record<string, unknown>;
+  /** Token + USD cost telemetry, populated when AI is configured. */
+  cost?: {
+    microUsd: number;
+    modelVision: string;
+    modelVerdict: string;
+  };
+  /** True when the verdict came from a mock pipeline (no OPENAI_API_KEY). */
+  mock?: boolean;
   createdAt: string;
 }
 

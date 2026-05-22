@@ -10,6 +10,7 @@
 const clerkPub = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const clerkSec = process.env.CLERK_SECRET_KEY;
 const dbUrl = process.env.DATABASE_URL;
+const openaiKey = process.env.OPENAI_API_KEY;
 
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION;
@@ -33,6 +34,10 @@ export const env = {
     enabled: Boolean(dbUrl),
     url: dbUrl,
   },
+  openai: {
+    enabled: Boolean(openaiKey),
+    apiKey: openaiKey,
+  },
   s3: {
     enabled: Boolean(s3Bucket && s3Region && s3AccessKeyId && s3SecretAccessKey),
     bucket: s3Bucket,
@@ -46,7 +51,7 @@ export const env = {
 
 /** Boolean for clients — true when ALL critical subsystems are wired. */
 export const isFullyConfigured =
-  env.clerk.enabled && env.db.enabled && env.s3.enabled;
+  env.clerk.enabled && env.db.enabled && env.s3.enabled && env.openai.enabled;
 
 /** Boolean for clients — true when at least one subsystem is missing. */
 export const isDemoMode = !isFullyConfigured;
