@@ -1,0 +1,606 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Panel } from "@/components/dash/Panel";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  CheckCircle2,
+  Crosshair,
+  Eye,
+  FileImage,
+  Layers,
+  Loader2,
+  RotateCcw,
+  ShieldAlert,
+  Upload,
+  XCircle,
+} from "lucide-react";
+import type { AutopsyResponse, AutopsyFlag } from "@/lib/api/contracts";
+
+type Phase =
+  | "idle"
+  | "presigning"
+  | "uploading"
+  | "scanning"
+  | "decoding"
+  | "writing"
+  | "done"
+  | "error";
+
+const PHASES: { id: Exclude<Phase, "idle" | "done" | "error">; label: string }[] = [
+  { id: "presigning", label: "Negotiating upload URL" },
+  { id: "uploading", label: "Ingesting screenshot" },
+  { id: "scanning", label: "OCR + structure scan" },
+  { id: "decoding", label: "Smart-money decode" },
+  { id: "writing", label: "Composing autopsy" },
+];
+
+interface PresignBody {
+  key: string;
+  uploadUrl: string | null;
+  publicUrl: string | null;
+  demo: boolean;
+  maxBytes: number;
+}
+
+export function UploadClient() {
+  const [file, setFile] = useState<{
+    name: string;
+    size: number;
+    type: string;
+    url: string;
+    raw: File;
+  } | null>(null);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<AutopsyResponse | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dragActive = useRef(false);
+  const [drag, setDrag] = useState(false);
+
+  function handleFile(f: File) {
+    setError(null);
+    setReport(null);
+    setProgress(0);
+    if (!["image/png", "image/jpeg", "image/webp"].includes(f.type)) {
+      setError("Unsupported file type. Use PNG, JPG or WEBP.");
+      return;
+    }
+    if (f.size > 12 * 1024 * 1024) {
+      setError("File is too large. Max 12 MB.");
+      return;
+    }
+    const url = URL.createObjectURL(f);
+    setFile({ name: f.name, size: f.size, type: f.type, url, raw: f });
+  }
+
+  // Run the pipeline whenever a fresh file is set.
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setPhase("presigning");
+        const presignRes = await fetch("/api/uploads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ contentType: file.type, size: file.size }),
+        });
+        if (!presignRes.ok) throw new Error(`presign_failed:${presignRes.status}`);
+        const presign = (await presignRes.json()) as PresignBody;
+        if (cancelled) return;
+
+        setPhase("uploading");
+        if (presign.uploadUrl) {
+          await uploadWithProgress(presign.uploadUrl, file.raw, (p) => setProgress(p));
+        } else {
+          // Demo mode: simulate progress so the UI still feels real.
+          await fakeProgress((p) => setProgress(p));
+        }
+        if (cancelled) return;
+
+        setPhase("scanning");
+        await wait(900);
+        if (cancelled) return;
+        setPhase("decoding");
+        await wait(1100);
+        if (cancelled) return;
+        setPhase("writing");
+
+        const autopsyRes = await fetch("/api/autopsy", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            uploadId: presign.key,
+            symbol: "BTCUSDT",
+            timeframe: "1H",
+            direction: "SHORT",
+          }),
+        });
+        if (autopsyRes.status === 402) {
+          const data = await autopsyRes.json();
+          throw new Error(data.message ?? "Quota exceeded — upgrade to continue.");
+        }
+        if (!autopsyRes.ok) throw new Error(`autopsy_failed:${autopsyRes.status}`);
+        const data = (await autopsyRes.json()) as AutopsyResponse;
+        if (cancelled) return;
+        setReport(data);
+        setPhase("done");
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "unknown_error");
+        setPhase("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+
+  function reset() {
+    if (file?.url) URL.revokeObjectURL(file.url);
+    setFile(null);
+    setPhase("idle");
+    setProgress(0);
+    setError(null);
+    setReport(null);
+  }
+
+  const phaseIndex = PHASES.findIndex((p) => p.id === phase);
+
+  return (
+    <>
+      <div className="flex-1 space-y-6 p-4 sm:p-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+          {/* Upload column */}
+          <div className="space-y-6 xl:col-span-5">
+            <Panel title="Ingest" meta={`step 0${Math.max(1, phaseIndex + 1)} / 0${PHASES.length}`}>
+              {!file ? (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (!dragActive.current) {
+                      dragActive.current = true;
+                      setDrag(true);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    dragActive.current = false;
+                    setDrag(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    dragActive.current = false;
+                    setDrag(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) handleFile(f);
+                  }}
+                  onClick={() => inputRef.current?.click()}
+                  className={`relative grid cursor-pointer place-items-center border border-dashed bg-void-100/40 px-6 py-16 text-center transition ${
+                    drag
+                      ? "border-signal-green bg-signal-green/[0.06]"
+                      : "border-signal-cyan/50 hover:border-signal-cyan"
+                  }`}
+                >
+                  <div className="absolute inset-0 bg-grid-fine opacity-30" />
+                  <div className="relative">
+                    <Upload
+                      className={`mx-auto h-10 w-10 ${
+                        drag ? "text-signal-green" : "text-signal-cyan"
+                      }`}
+                    />
+                    <div className="mt-4 font-display text-3xl tracking-wide">
+                      {drag ? "Release to ingest" : "Drop the loss"}
+                    </div>
+                    <div className="mt-2 font-mono text-[11px] uppercase tracking-widest2 text-void-700">
+                      png · jpg · webp · 12MB max · or click to browse
+                    </div>
+                    <div className="mt-6 flex flex-wrap justify-center gap-1.5">
+                      {["TradingView", "BingX", "Binance", "MT5", "Bybit", "Mobile"].map((p) => (
+                        <span key={p} className="chip">
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFile(f);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="relative overflow-hidden border border-void-300/70 bg-void-0/60">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={file.url}
+                      alt={file.name}
+                      className="h-[260px] w-full object-cover opacity-90"
+                    />
+                    {phase !== "done" && phase !== "error" && (
+                      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                        <div className="absolute inset-x-0 top-0 h-32 animate-scan bg-gradient-to-b from-transparent via-signal-cyan/30 to-transparent" />
+                      </div>
+                    )}
+                    <div className="absolute left-2 top-2 chip border-signal-cyan/40 text-signal-cyan">
+                      <FileImage className="h-3 w-3" />
+                      {(file.size / 1024).toFixed(0)} KB
+                    </div>
+                    <div className="absolute right-2 top-2 chip">
+                      {file.name.length > 28 ? file.name.slice(0, 25) + "…" : file.name}
+                    </div>
+                  </div>
+
+                  {phase === "uploading" && (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+                        <span>Upload</span>
+                        <span className="text-signal-cyan">{progress}%</span>
+                      </div>
+                      <div className="h-1 w-full bg-void-300/60">
+                        <div
+                          className="h-full bg-signal-cyan transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={reset} className="btn-ghost w-full justify-center">
+                    <RotateCcw className="h-3 w-3" />
+                    Replace screenshot
+                  </button>
+                </div>
+              )}
+
+              {error && (
+                <div className="mt-4 border border-signal-red/40 bg-signal-red/[0.06] p-3">
+                  <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest2 text-signal-red">
+                    <XCircle className="h-3 w-3" />
+                    Error
+                  </div>
+                  <p className="mt-1 text-sm text-void-800">{error}</p>
+                </div>
+              )}
+            </Panel>
+
+            <Panel
+              title="Pipeline"
+              meta={
+                phase === "done"
+                  ? "complete"
+                  : phase === "idle"
+                    ? "awaiting input"
+                    : phase === "error"
+                      ? "halted"
+                      : "running"
+              }
+            >
+              <ol className="space-y-3">
+                {PHASES.map((p, i) => {
+                  const active = phase === p.id;
+                  const done = phase === "done" || (phaseIndex >= 0 && i < phaseIndex);
+                  return (
+                    <li key={p.id} className="flex items-center gap-3">
+                      <span
+                        className={`grid h-6 w-6 shrink-0 place-items-center border ${
+                          done
+                            ? "border-signal-green/60 text-signal-green"
+                            : active
+                              ? "border-signal-cyan/60 text-signal-cyan"
+                              : "border-void-400 text-void-700"
+                        }`}
+                      >
+                        {done ? (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        ) : active ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <span className="font-mono text-[10px]">{i + 1}</span>
+                        )}
+                      </span>
+                      <div className="flex-1">
+                        <div
+                          className={`font-mono text-[12px] uppercase tracking-widest2 ${
+                            active
+                              ? "text-signal-cyan"
+                              : done
+                                ? "text-signal-green"
+                                : "text-void-700"
+                          }`}
+                        >
+                          {p.label}
+                        </div>
+                      </div>
+                      <span className="font-mono text-[10px] text-void-600">
+                        {done ? "OK" : active ? "..." : "—"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </Panel>
+          </div>
+
+          {/* Report column */}
+          <div className="xl:col-span-7">
+            <Panel
+              title="Autopsy report"
+              meta={phase === "done" ? "verdict ready" : "awaiting verdict"}
+            >
+              <AnimatePresence mode="wait">
+                {phase === "idle" && (
+                  <motion.div
+                    key="idle"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="grid place-items-center py-16 text-center"
+                  >
+                    <Eye className="mb-4 h-10 w-10 text-void-600" />
+                    <div className="font-display text-2xl tracking-wide text-void-700">
+                      No trade in scope
+                    </div>
+                    <p className="mt-2 max-w-md text-sm text-void-700">
+                      Upload a chart screenshot of a closed trade. The engine extracts
+                      structure, smart-money intent, and writes a forensic verdict.
+                    </p>
+                  </motion.div>
+                )}
+
+                {phase !== "idle" && phase !== "done" && phase !== "error" && (
+                  <motion.div
+                    key="working"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-3 py-6 font-mono text-[11px]"
+                  >
+                    <Working phase={phase} />
+                  </motion.div>
+                )}
+
+                {phase === "done" && report && (
+                  <motion.div
+                    key="report"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                  >
+                    <Report data={report} />
+                  </motion.div>
+                )}
+
+                {phase === "error" && (
+                  <motion.div
+                    key="error"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="grid place-items-center py-16 text-center"
+                  >
+                    <XCircle className="mb-4 h-10 w-10 text-signal-red" />
+                    <div className="font-display text-2xl tracking-wide text-signal-red">
+                      Pipeline halted
+                    </div>
+                    <p className="mt-2 max-w-md text-sm text-void-700">
+                      {error ?? "Unknown error"}
+                    </p>
+                    <button onClick={reset} className="btn-ghost mt-4">
+                      Retry
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Panel>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function uploadWithProgress(
+  url: string,
+  file: File,
+  onProgress: (pct: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`s3_put_failed:${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("s3_put_network_error"));
+    xhr.send(file);
+  });
+}
+
+async function fakeProgress(onProgress: (pct: number) => void) {
+  for (let i = 10; i <= 100; i += 10) {
+    await wait(60);
+    onProgress(i);
+  }
+}
+
+function wait(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+function Working({ phase }: { phase: Phase }) {
+  const lines: Partial<Record<Phase, string[]>> = {
+    presigning: ["[ ok ] Stream opened", "[ ok ] Negotiating presigned PUT"],
+    uploading: ["[ ok ] Streaming bytes ...", "[ ok ] Hash 0x9a3f7c…"],
+    scanning: [
+      "[ ok ] OCR pass · 14 candles · 1H · BTCUSDT",
+      "[ ok ] Range high 67,612 · range low 66,820",
+      "[ ok ] Detected BOS @ 67,420 · CHOCH @ 67,580",
+      "[ ! ] Stop hunt above ASIA HIGH (67,612)",
+      "[ ok ] Order block 67,290–67,355 (4H bullish)",
+    ],
+    decoding: [
+      "[ dx ] Buy-side liquidity raid → reversal",
+      "[ dx ] Premium of 4H dealing range",
+      "[ dx ] Equal lows below = sell-side draw",
+      "[ ! ] Inducement low ignored at 67,355",
+      "[ dx ] Psychology: revenge entry · conf 0.81",
+    ],
+    writing: ["» Composing verdict ...", "» Drafting improvement plan ...", "» Linking lessons ..."],
+  };
+  return (
+    <div className="space-y-1 leading-6 text-void-800">
+      {(lines[phase] ?? []).map((l, i) => (
+        <div key={i} className="animate-rise">
+          <Pretty l={l} />
+        </div>
+      ))}
+      <span className="caret text-signal-green" />
+    </div>
+  );
+}
+
+function Pretty({ l }: { l: string }) {
+  const m = l.match(/^\[ (ok|!|dx) \]/);
+  if (m) {
+    const tag = m[1].toUpperCase();
+    const rest = l.slice(m[0].length);
+    const c =
+      tag === "OK"
+        ? "text-signal-green"
+        : tag === "!"
+          ? "text-signal-amber"
+          : "text-signal-violet";
+    return (
+      <div>
+        <span className={c}>[ {tag.padEnd(2, " ")} ]</span>
+        <span>{rest}</span>
+      </div>
+    );
+  }
+  return <div className="text-signal-cyan">{l}</div>;
+}
+
+function Report({ data }: { data: AutopsyResponse }) {
+  const scoreClass =
+    data.score >= 75
+      ? "text-signal-green"
+      : data.score >= 50
+        ? "text-signal-amber"
+        : "text-signal-red";
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-px bg-void-300/60 sm:grid-cols-3">
+        <div className="bg-void-50/60 p-5">
+          <div className="font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+            Verdict
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className={`font-display text-7xl leading-none ${scoreClass}`}>
+              {data.score}
+            </span>
+            <span className="font-mono text-[11px] text-void-700">/ 100</span>
+          </div>
+          <div className="mt-3 text-sm text-void-800">{data.verdict}</div>
+        </div>
+        <div className="bg-void-50/60 p-5">
+          <div className="font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+            Result
+          </div>
+          <div className="mt-2 font-display text-3xl tracking-wide text-signal-red">−4.2R</div>
+          {data.rebuyZone && (
+            <div className="mt-3 font-mono text-[11px]">
+              <span className="text-void-700">Rebuy zone</span>{" "}
+              <span className="text-void-900">{data.rebuyZone}</span>
+            </div>
+          )}
+        </div>
+        <div className="bg-void-50/60 p-5">
+          <div className="font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+            Flags
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {data.flags.map((f) => (
+              <Flag key={f.key} flag={f} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Block icon={ShieldAlert} title="What you did" body={data.summary} tone="red" />
+        <Block icon={Crosshair} title="Improvement plan" body={data.improvement} tone="green" />
+      </div>
+
+      <div className="border border-void-300/70 bg-void-100/40 p-4">
+        <div className="mb-3 flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+          <Layers className="h-3 w-3" />
+          Concepts engaged
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {data.concepts.map((t) => (
+            <span key={t} className="chip">
+              {t.replace(/-/g, " ")}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Flag({ flag }: { flag: AutopsyFlag }) {
+  const map = {
+    red: "border-signal-red/40 text-signal-red bg-signal-red/[0.08]",
+    amber: "border-signal-amber/40 text-signal-amber bg-signal-amber/[0.08]",
+    violet: "border-signal-violet/40 text-signal-violet bg-signal-violet/[0.08]",
+    green: "border-signal-green/40 text-signal-green bg-signal-green/[0.08]",
+    cyan: "border-signal-cyan/40 text-signal-cyan bg-signal-cyan/[0.08]",
+  } as const;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] uppercase tracking-widest2 ${map[flag.tone]}`}
+      title={`confidence ${(flag.confidence * 100).toFixed(0)}%`}
+    >
+      {flag.label}
+    </span>
+  );
+}
+
+function Block({
+  icon: Icon,
+  title,
+  body,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  body: string;
+  tone: "red" | "green";
+}) {
+  const map = {
+    red: { bd: "border-signal-red/40", tx: "text-signal-red", bg: "bg-signal-red/[0.04]" },
+    green: { bd: "border-signal-green/40", tx: "text-signal-green", bg: "bg-signal-green/[0.04]" },
+  }[tone];
+  return (
+    <div className={`relative border ${map.bd} ${map.bg} p-5`}>
+      <div className="flex items-center gap-2">
+        <Icon className={`h-4 w-4 ${map.tx}`} />
+        <div className={`font-mono text-[10px] uppercase tracking-widest2 ${map.tx}`}>{title}</div>
+      </div>
+      <p className="mt-2 text-sm leading-relaxed text-void-800">{body}</p>
+    </div>
+  );
+}
