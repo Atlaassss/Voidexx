@@ -1,0 +1,364 @@
+// VOIDEXX — Prisma schema
+// Initial cut: covers users, subscriptions, trades, autopsies, journals,
+// psychology reports, exchange connections, automation logs, notifications,
+// referrals, and ad preferences.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// Identity
+// =====================================================
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  username        String?  @unique
+  displayName     String?
+  passwordHash    String?  // null when only social auth used
+  twoFactorSecret String?
+  twoFactorOn     Boolean  @default(false)
+  emailVerified   DateTime?
+  timezone        String   @default("UTC")
+  locale          String   @default("en")
+  role            UserRole @default(USER)
+
+  // Plan
+  plan            Plan         @default(RECON)
+  planRenewsAt    DateTime?
+  freeUsageMonth  Int          @default(0)
+
+  // Refs
+  trades          Trade[]
+  autopsies       Autopsy[]
+  journals        JournalEntry[]
+  psychReports    PsychologyReport[]
+  exchanges       ExchangeConnection[]
+  automationLogs  AutomationLog[]
+  notifications   Notification[]
+  payments        Payment[]
+  sessions        Session[]
+  apiKeys         ApiKey[]
+  referralsMade   Referral[]   @relation("ReferralFrom")
+  referralsGot    Referral[]   @relation("ReferralTo")
+  adPrefs         AdPreference?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  @@index([plan])
+  @@index([createdAt])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPPORT
+}
+
+enum Plan {
+  RECON      // free
+  OPERATOR
+  DESK
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  ip         String?
+  userAgent  String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  keyHash    String   @unique
+  scopes     String[] // e.g. ["read:trades", "write:autopsies"]
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+// =====================================================
+// Trades + Autopsies
+// =====================================================
+
+model Trade {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  symbol        String   // "BTCUSDT"
+  market        Market   @default(CRYPTO)
+  timeframe     String   // "1H", "15M"
+  direction     Direction
+  entry         Decimal  @db.Decimal(20, 8)
+  stop          Decimal? @db.Decimal(20, 8)
+  target        Decimal? @db.Decimal(20, 8)
+  size          Decimal? @db.Decimal(20, 8)
+  rPlanned      Float?
+  rRealized     Float?
+  pnl           Decimal? @db.Decimal(20, 8)
+  outcome       Outcome  @default(OPEN)
+  openedAt      DateTime
+  closedAt      DateTime?
+
+  notes         String?
+  tags          String[]
+  screenshotUrl String?
+
+  autopsy       Autopsy?
+  journal       JournalEntry?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, openedAt])
+  @@index([symbol])
+}
+
+enum Market {
+  CRYPTO
+  FOREX
+  INDICES
+  COMMODITIES
+  STOCKS
+}
+
+enum Direction {
+  LONG
+  SHORT
+}
+
+enum Outcome {
+  OPEN
+  WIN
+  LOSS
+  BREAKEVEN
+  CANCELLED
+}
+
+model Autopsy {
+  id           String   @id @default(cuid())
+  tradeId      String   @unique
+  trade        Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Pipeline outputs
+  ocrJson      Json?    // raw OCR extraction
+  structureJson Json?   // BOS, CHOCH, OBs, FVGs, sweeps
+  smJson       Json?    // smart-money decode
+  psychJson    Json?    // tilt / revenge / FOMO scores
+
+  // Verdict
+  score        Int      // 0..100
+  verdict      String   // short headline
+  summary      String   @db.Text
+  improvement  String   @db.Text
+  rebuyZone    String?
+  flags        String[] // ["revenge", "liquidity-grab", ...]
+  concepts     String[] // ICT/SMC concept slugs
+
+  modelVersion String   @default("voidexx-vision-1")
+  costMicros   Int      @default(0) // ai cost tracking
+
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model JournalEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradeId     String?  @unique
+  trade       Trade?   @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+
+  title       String
+  body        String   @db.Text
+  tags        String[]
+  mood        Int?     // -3..+3
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+model PsychologyReport {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  periodStart     DateTime
+  periodEnd       DateTime
+  archetype       String   // "Patient sniper" etc.
+  composite       Int      // 0..100
+  discipline      Int
+  patience        Int
+  conviction      Int
+  riskAwareness   Int
+  tiltResistance  Int
+  flagsJson       Json     // counts per flag
+  summary         String   @db.Text
+
+  createdAt       DateTime @default(now())
+
+  @@index([userId, periodEnd])
+}
+
+// =====================================================
+// Exchange + Automation
+// =====================================================
+
+model ExchangeConnection {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue       Venue
+  // Encrypted at rest. Never expose plaintext to client.
+  apiKeyEnc   String
+  apiSecretEnc String
+  passphraseEnc String?
+  scopes      String[] // ["read", "trade"]
+  paperMode   Boolean  @default(true)
+  enabled     Boolean  @default(true)
+  lastCheck   DateTime?
+  createdAt   DateTime @default(now())
+
+  logs        AutomationLog[]
+
+  @@unique([userId, venue])
+  @@index([userId])
+}
+
+enum Venue {
+  BINGX
+  BINANCE
+  BYBIT
+  OKX
+  KUCOIN
+  MT5
+}
+
+model AutomationLog {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeId   String?
+  exchange     ExchangeConnection? @relation(fields: [exchangeId], references: [id], onDelete: SetNull)
+
+  kind         AutomationKind
+  level        LogLevel  @default(INFO)
+  message      String
+  payload      Json?
+
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum AutomationKind {
+  ORDER_PLACED
+  ORDER_CANCELLED
+  ORDER_FILLED
+  RISK_CAP_HIT
+  STRATEGY_TOGGLED
+  DAILY_LOSS_LOCKOUT
+  TILT_LOCKOUT
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+// =====================================================
+// Billing
+// =====================================================
+
+model Payment {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider    PaymentProvider
+  providerRef String   @unique // stripe charge id, etc.
+  amountCents Int
+  currency    String   @default("USD")
+  status      PaymentStatus  @default(PENDING)
+  description String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+  GCASH
+  MAYA
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+// =====================================================
+// Misc
+// =====================================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Referral {
+  id         String  @id @default(cuid())
+  fromId     String
+  toId       String
+  from       User    @relation("ReferralFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to         User    @relation("ReferralTo", fields: [toId], references: [id], onDelete: Cascade)
+  code       String  @unique
+  rewarded   Boolean @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([fromId, toId])
+}
+
+model AdPreference {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  showAds   Boolean @default(true)
+  topics    String[]
+}
