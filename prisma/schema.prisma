@@ -44,6 +44,20 @@ model User {
   stripeSubscriptionId String? @unique
   subscriptionStatus   String? // active, past_due, canceled, incomplete, trialing
 
+  // PayMongo identity (Phase 7.1 — Philippines billing rail)
+  // PayMongo doesn't have customer objects; we track the ACTIVE
+  // PaymentIntent for the most recent paid checkout. On webhook
+  // payment_intent.succeeded we mark the user upgraded. The
+  // /api/cron/payment-expiry sweep clears stale intents older than 1h.
+  paymongoIntentId       String? @unique
+  paymongoIntentExpires  DateTime?
+
+  // Referral identity (Phase 7 growth)
+  // Personal share code — what we put on the user's /r/<code> link.
+  // Lazily backfilled by lib/referrals.ts the first time the user
+  // visits the referrals dashboard, so existing users self-heal.
+  referralCode    String? @unique
+
   // Refs
   trades          Trade[]
   autopsies       Autopsy[]
@@ -331,6 +345,11 @@ enum PaymentProvider {
   PAYPAL
   GCASH
   MAYA
+  // PayMongo unified provider. We keep a single PAYMONGO row instead
+  // of one row per method (GCash/Maya/Card/GrabPay) because PayMongo
+  // returns a single PaymentIntent + Payment regardless of method —
+  // the actual method lands in `description` ("PayMongo · GCash" etc).
+  PAYMONGO
 }
 
 enum PaymentStatus {
@@ -360,14 +379,18 @@ model Notification {
 model Referral {
   id         String  @id @default(cuid())
   fromId     String
-  toId       String
+  toId       String  @unique  // each invitee can only be attributed once
   from       User    @relation("ReferralFrom", fields: [fromId], references: [id], onDelete: Cascade)
   to         User    @relation("ReferralTo", fields: [toId], references: [id], onDelete: Cascade)
-  code       String  @unique
+  // The share-code that minted this referral. Stays denormalised
+  // even if the referrer regenerates their code later.
+  code       String
   rewarded   Boolean @default(false)
+  rewardedAt DateTime?
   createdAt  DateTime @default(now())
 
-  @@unique([fromId, toId])
+  @@index([fromId, createdAt])
+  @@index([code])
 }
 
 model AdPreference {
@@ -376,4 +399,42 @@ model AdPreference {
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   showAds   Boolean @default(true)
   topics    String[]
+}
+
+// =====================================================
+// Admin + Audit
+// =====================================================
+
+model AdminAuditLog {
+  id          String   @id @default(cuid())
+  actorId     String
+  action      String   // e.g. "user.plan_changed", "user.banned", "credit.granted"
+  targetType  String?  // e.g. "User", "Payment"
+  targetId    String?
+  meta        Json?    // arbitrary context (old/new values, reason, etc.)
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@index([action])
+}
+
+// =====================================================
+// Webhook Idempotency
+// =====================================================
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String   // "stripe", "paypal", "bingx"
+  eventId     String   // provider's event/delivery id
+  eventType   String   // e.g. "checkout.session.completed"
+  status      String   @default("processing") // processing | done | failed
+  payload     Json?    // raw event body (stored for replay/debug)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, createdAt])
 }

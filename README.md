@@ -31,10 +31,20 @@ for AI, payments, exchange wiring and admin to plug into.
 | API surface | ✅ | `/api/uploads`, `/api/autopsy` real (auth + zod + quota + DB persistence + streaming); `/api/autopsy/[id]` reads persisted reports |
 | Real AI vision pipeline | ✅ | Streams progress over NDJSON; cost-tracked in `Autopsy.costMicros` |
 | Stripe billing | ✅ | Real Checkout, webhook → plan upgrade, customer portal, cost-tracked Payment rows; demo-mode shows `Stripe · demo` chip |
+| PayMongo billing (PH rail) | ✅ | GCash · Maya · GrabPay redirect flow via PaymentIntent + signed webhook; PHP pricing toggle on marketing; expiry cron sweeps abandoned intents |
 | Exchange wiring | ✅ | BingX read-only API connect/probe/refresh; AES-256-GCM credential vault; risk engine primitives; automation dashboard wired to live balance |
-| GCash / Maya / PayPal | ⏳ | Stripe handles the global market; PH-specific rails via Xendit — Phase 6 |
-| Live order placement | ⏳ | Read-only in v1; admin-gated `placeOrder` lands in Phase 6 |
-| Admin panel | ⏳ | Schema-ready, route group `(admin)` not yet built — Phase 6 |
+| GCash / Maya / PayPal | ✅ | GCash + Maya + GrabPay shipped via PayMongo (Phase 7.1); PayPal still deferred |
+| Live order placement | ✅ | 2FA consent gate, risk engine check, paper/live split, audit-logged |
+| Admin panel | ✅ | Role-gated route group, user management, audit log, AI cost dashboard |
+| Webhook idempotency | ✅ | `WebhookEvent` table, claim-before-process pattern on Stripe webhook |
+| Vercel Cron (quota reset) | ✅ | Monthly RECON quota bulk reset via `/api/cron/quota-reset` |
+| Structured logging | ✅ | JSON-line prod logger, service-scoped, level-gated |
+| Autopsy retry UX | ✅ | Retry button on pipeline failure, re-runs without re-upload |
+| Referrals + affiliates | ✅ | Per-user share code, `/r/<code>` first-touch attribution cookie, dashboard with copy/share/tier-progress UI, paid-conversion auto-reward via billing webhook |
+| SEO | ✅ | Sitemap, robots, generated OG image, full metadata graph, per-page canonicals |
+| Blog (MDX) | ✅ | File-based at `content/blog/*.mdx`, SSG pre-rendered, custom prose styling, two seed posts |
+| Email (transactional) | ✅ | Resend wrapper with welcome / autopsy-ready / plan-changed templates; demo-mode logs instead of sending |
+| Discord OAuth + push | ⏳ | Deferred to Phase 7.5 — orthogonal to growth foundation |
 
 `✅` shipped · `🟡` partial · `⏳` planned
 
@@ -103,6 +113,7 @@ relevant block:
 | Storage | `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (+ optional `S3_ENDPOINT` for R2) | Upload page hits real presigned PUT URLs; uploads stream directly browser → S3 with progress; orchestrator fetches the bytes for the vision pass |
 | AI | `OPENAI_API_KEY` | Vision + verdict passes hit `gpt-4o`; `Autopsy.costMicros` tracks per-trade USD cost; without it, the orchestrator returns one of 4 self-coherent demo archetypes keyed off `uploadId` hash |
 | Billing | `STRIPE_SECRET_KEY` + `STRIPE_PRICE_OPERATOR` + `STRIPE_PRICE_DESK` (+ `STRIPE_WEBHOOK_SECRET` for prod) | `/api/billing/checkout` issues real Stripe Checkout sessions; `/api/billing/webhook` upgrades/downgrades on `checkout.session.completed` etc.; `/api/billing/portal` mounts the Stripe customer portal for self-service plan changes |
+| Billing (PH) | `PAYMONGO_SECRET_KEY` (+ `PAYMONGO_WEBHOOK_SECRET` for prod, optional `PAYMONGO_PRICE_OPERATOR_PHP` / `PAYMONGO_PRICE_DESK_PHP` overrides) | `/api/billing/checkout` accepts `provider:"paymongo", method:"gcash"\|"paymaya"\|"grab_pay"`; redirects to the chosen e-wallet; `/api/billing/paymongo/webhook` settles the upgrade on `payment.paid` / `payment_intent.succeeded`; hourly `/api/cron/payment-expiry` sweeps abandoned intents |
 
 Type-check:
 
@@ -292,11 +303,55 @@ prisma/
 - Automation page is now real: server fetches the user's connections, client modal handles BingX link with paper-mode locked on (live trading is Phase 6).
 - Pre-Phase-5 hardening included in this PR: quota refund on autopsy failure, lazy monthly quota reset, mock-mode prod refusal, score floor 0→2, Stripe customer idempotency-key.
 
-**Phase 6 — Admin + analytics**
-- `(admin)` route group, user / subscription / ad management, AI cost dashboard, support tickets.
+**Phase 6 — Admin + analytics** ✅ shipped (this PR)
+- `(admin)` route group, user management, audit log, AI cost dashboard.
+- `WebhookEvent` idempotency table — Stripe webhook claims before processing.
+- Live order placement with 2FA consent gate (`/api/exchange/consent` → `/api/exchange/order`); paper mode skips, live requires TOTP-verified consent token.
+- Vercel Cron at `/api/cron/quota-reset` — monthly bulk reset for RECON quota counters.
+- Structured logger (`lib/logger.ts`) — JSON lines in prod, pretty-print in dev.
+- Autopsy retry button — re-runs pipeline against the same screenshot without re-upload.
 
-**Phase 7 — Growth**
-- Referrals, affiliate links, blog (MDX), SEO, push notifications, Discord OAuth + webhook bridge.
+**Phase 7 — Growth (foundation)** ✅ shipped (this PR)
+- **Referrals + affiliates** — per-user 8-char share code, `/r/<code>` redirector with 30-day first-touch attribution cookie, full dashboard at `/dashboard/referrals` (copy code, copy URL, native Share API, tier progress bar, recent invitees with privacy-masked names). Paid-conversion auto-rewards via the billing webhook (`markRefereeConverted`).
+- **SEO** — `metadataBase`, title template, full OpenGraph + Twitter graph, dynamic OG image at `/opengraph-image` (generated with `next/og` in the brand aesthetic), `sitemap.xml` and `robots.txt` via Next 15 file conventions.
+- **Blog** — file-based MDX at `content/blog/*.mdx` with typed frontmatter, custom prose-styling MDX components, SSG pre-rendering. Two seed posts shipped: *Anatomy of a Liquidity Grab* and *Four Archetypes Every Losing Trade Falls Into*.
+- **Transactional email** — Resend integration (`lib/email/`) with hand-rolled HTML templates for the three flows: welcome (sent from `ensureDbUser` on first mirror, with referral cookie claim), autopsy-ready (sent from orchestrator after persist), plan-changed (sent from billing webhook). Demo-mode logs the email instead of sending so the rest of the app stays wired.
+- **Demo contract preserved** — every new subsystem boots without env vars and surfaces unwired-ness in the DemoBanner.
+
+**Phase 7.1 — PayMongo (PH billing rail)** ✅ shipped (this PR)
+- **Provider abstraction in checkout** — `POST /api/billing/checkout` now accepts `{ plan, provider: "stripe"|"paymongo", method?: "gcash"|"paymaya"|"grab_pay"|"dob"|"dob_ubp"|"billease" }`. Stripe path unchanged; PayMongo path runs the PaymentIntent → PaymentMethod → attach dance and returns a redirect URL the client navigates to.
+- **PayMongo client** (`lib/billing/paymongo.ts`) — typed `paymongoFetch<T>()` with explicit Basic-auth header construction (no caller-init spread, so Next.js fetch instrumentation can't leak headers PayMongo rejects), the four domain helpers (`createPaymentIntent` / `createEwalletPaymentMethod` / `attachPaymentMethod` / `getPaymentIntent`), and `verifyWebhookSignature()` doing constant-time HMAC-SHA256 over `t.<rawBody>` with a ±5 min tolerance window.
+- **Webhook** at `/api/billing/paymongo/webhook` — signature-verified, idempotency-claimed via the existing `WebhookEvent` table, handles `payment.paid` / `payment_intent.succeeded` / `payment.failed`. On success: flips the User's plan, persists a Payment row with `provider: "PAYMONGO"`, fires `markRefereeConverted` for the referral attribution chain, and sends the plan-changed email.
+- **Expiry cron** at `/api/cron/payment-expiry` — runs hourly (configured in `vercel.json`), probes every User with a stale `paymongoIntentId` against PayMongo's API, and clears the field for terminal-not-success states (`cancelled` / `awaiting_*` past expiry / 404 from PayMongo). The "user closed the tab and never came back" case fires no webhook — this cron is the only thing that catches it.
+- **Schema** — `Payment.provider` enum extended with `PAYMONGO`; `User.paymongoIntentId` (unique, nullable) + `User.paymongoIntentExpires`; migration in `prisma/migrations/20260524000002_paymongo/`.
+- **International methods** — every PayMongo PaymentIntent allows `["card"]` alongside the chosen e-wallet, so PayMongo's hosted page transparently offers Visa/MC/JCB/Amex (with 3-D Secure required) when the user's primary method isn't installed on their device.
+- **Marketing pricing** — `Pricing.tsx` now has a USD↔PHP currency toggle. PHP shows the GCash/Maya prices that get charged on PayMongo. Footer copy updates to match the active rail.
+- **Settings + DemoBanner** — billing-status row composes "Stripe + PayMongo · live" / "Stripe · live" / "PayMongo · live (PH)" / "Demo" depending on which keys are wired. Banner only flags `[billing]` when **both** rails are unwired so a PH-first deploy isn't held up by missing Stripe config.
+
+**Phase 7.5 — Growth (Discord + push)** — deferred
+- Discord OAuth + webhook bridge, web push notifications. Orthogonal to the growth foundation; cleaner as a focused follow-up PR.
+
+---
+
+## Launch checklist (PayMongo · PH-first)
+
+The order below is the actual order — earlier steps unblock later ones, and PayMongo enforces a few of these at the API level (won't issue live keys before the bank account is verified, won't release funds before activation completes).
+
+1. **Sign up at the [PayMongo dashboard](https://dashboard.paymongo.com)** — use the business email you'll keep forever; this is what shows on customer receipts.
+2. **Activate the account** — fill in business details (sole prop / corp), upload IDs, business permits, and DTI/SEC docs. Activation usually clears in 1–3 business days. Until activated, only **test** keys (`sk_test_*` / `pk_test_*`) work.
+3. **Connect a bank account** — Settings → Settlement → add a peso account. PayMongo settles weekly (first payout has a 7-day hold for new merchants). Bank verification is a small-deposit-match flow.
+4. **Pull the live API keys** — Developers → API Keys. Copy `sk_live_*` (server) and `pk_live_*` (browser) into `PAYMONGO_SECRET_KEY` + `NEXT_PUBLIC_PAYMONGO_PUBLIC_KEY`.
+5. **Create a webhook endpoint** — Developers → Webhooks → New endpoint. URL: `https://YOUR-DOMAIN/api/billing/paymongo/webhook`. Subscribe to `payment.paid`, `payment.failed`, `payment_intent.succeeded`, `payment_intent.payment_failed`. Copy the signing secret into `PAYMONGO_WEBHOOK_SECRET`.
+6. **Hook up your custom domain** — Vercel → Settings → Domains → add the domain. Set `NEXT_PUBLIC_APP_URL` to match. PayMongo's redirect URLs and our `success_url` / `cancel_url` are derived from this — webhooks **will not** arrive at a vercel.app preview URL once you switch.
+7. **Migrate the prod database** — `npm run db:migrate` (= `prisma migrate deploy`) against the production `DATABASE_URL`. The Phase 7.1 migration adds `User.paymongoIntentId` + `User.paymongoIntentExpires` and extends `PaymentProvider` with `PAYMONGO`. Idempotent — safe to re-run.
+8. **Flip to live** — replace test keys with live keys in the deploy env, redeploy. Smoke test:
+   - Open `/dashboard/billing`, click *Pay via GCash · Operator* → should redirect to `https://gcash.app.link/...`
+   - Authorise in the GCash app → return to `/dashboard/billing?checkout=success&provider=paymongo`
+   - Within ~30s the webhook should land and the User row should flip to `OPERATOR` with `subscriptionStatus=active`
+   - Inspect `WebhookEvent` for the corresponding `done` row (proves idempotency claim worked)
+9. **Set the cron secret** — Vercel auto-injects `CRON_SECRET` for Vercel Cron. If you're running on a different host wire it manually; confirm `/api/cron/payment-expiry` returns `{ ok: true, scanned: 0, ... }` when called with the bearer header.
+
+If anything 503s with `paymongo_not_configured`, double-check the **secret** key is `sk_*` not `pk_*` — easy mistake, identical naming, opposite roles.
 
 ---
 

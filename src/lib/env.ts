@@ -18,8 +18,17 @@ const stripePub = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 const stripePriceOperator = process.env.STRIPE_PRICE_OPERATOR;
 const stripePriceDesk = process.env.STRIPE_PRICE_DESK;
 
+const paymongoSec = process.env.PAYMONGO_SECRET_KEY;
+const paymongoPub = process.env.NEXT_PUBLIC_PAYMONGO_PUBLIC_KEY;
+const paymongoWebhook = process.env.PAYMONGO_WEBHOOK_SECRET;
+const paymongoPriceOperatorPhp = process.env.PAYMONGO_PRICE_OPERATOR_PHP;
+const paymongoPriceDeskPhp = process.env.PAYMONGO_PRICE_DESK_PHP;
+
 const exchangeEncryptionKey = process.env.EXCHANGE_ENCRYPTION_KEY;
 const bingxBaseUrl = process.env.BINGX_BASE_URL;
+
+const resendKey = process.env.RESEND_API_KEY;
+const emailFrom = process.env.EMAIL_FROM_ADDRESS;
 
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION;
@@ -67,6 +76,29 @@ export const env = {
     cancelUrl:
       `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/dashboard/billing?checkout=cancelled`,
   },
+  paymongo: {
+    // PayMongo is the Philippine payment rail — covers GCash, Maya,
+    // GrabPay, BPI, BDO, UnionBank online + cards (Visa/MC/JCB/Amex).
+    // Using a SOURCE-based flow with PaymentIntent + PaymentMethod
+    // (the "PayMongo Payments API" rather than the older Sources API),
+    // because Sources is being deprecated and intents handle 3DS cleanly.
+    enabled: Boolean(paymongoSec),
+    webhookEnabled: Boolean(paymongoSec && paymongoWebhook),
+    secretKey: paymongoSec,
+    publicKey: paymongoPub,
+    webhookSecret: paymongoWebhook,
+    // PHP-denominated "prices". Stored as STRING centavos to mirror the
+    // Stripe Price-id pattern; we don't actually have a Price object in
+    // PayMongo (their PaymentIntent takes a raw amount), but using
+    // env-driven amounts gives ops the same upgrade-pricing-without-redeploy
+    // workflow they have on Stripe.
+    priceOperatorPhp: paymongoPriceOperatorPhp,
+    priceDeskPhp: paymongoPriceDeskPhp,
+    successUrl:
+      `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/dashboard/billing?checkout=success&provider=paymongo`,
+    cancelUrl:
+      `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/dashboard/billing?checkout=cancelled&provider=paymongo`,
+  },
   s3: {
     enabled: Boolean(s3Bucket && s3Region && s3AccessKeyId && s3SecretAccessKey),
     bucket: s3Bucket,
@@ -83,6 +115,19 @@ export const env = {
     encryptionKey: exchangeEncryptionKey,
     bingxBaseUrl,
   },
+  email: {
+    // True once Resend is configured. When disabled, every send() call
+    // logs the email and returns success — the welcome / autopsy-ready
+    // / plan-changed flows stay wired without burning real mail.
+    enabled: Boolean(resendKey),
+    resendApiKey: resendKey,
+    fromAddress: emailFrom ?? "Voidexx <ops@voidexx.io>",
+  },
+  admin: {
+    // Admin panel is "enabled" when both auth AND db are wired — the role
+    // check is the real gate, but we can't do role checks without a DB.
+    enabled: Boolean(clerkPub && clerkSec && dbUrl),
+  },
 } as const;
 
 /** Boolean for clients — true when ALL critical subsystems are wired. */
@@ -91,7 +136,9 @@ export const isFullyConfigured =
   env.db.enabled &&
   env.s3.enabled &&
   env.openai.enabled &&
-  env.stripe.enabled &&
+  // At least ONE billing rail. PH-first deploys may run PayMongo alone;
+  // global deploys may run Stripe alone; both is fine too.
+  (env.stripe.enabled || env.paymongo.enabled) &&
   env.exchange.enabled;
 
 /** Boolean for clients — true when at least one subsystem is missing. */
@@ -116,9 +163,17 @@ if (process.env.NODE_ENV === "production") {
   if (!env.db.enabled) missing.push("DATABASE_URL");
   if (!env.s3.enabled) missing.push("S3_*");
   if (!env.openai.enabled) missing.push("OPENAI_API_KEY");
-  if (!env.stripe.enabled) missing.push("STRIPE_SECRET_KEY");
+  // Billing: at least ONE rail must be wired. Stripe handles global,
+  // PayMongo handles the Philippines (GCash / Maya / GrabPay / cards).
+  // Either alone is enough to take payments — only flag when BOTH are
+  // missing so a PH-first launch isn't held up by Stripe config.
+  if (!env.stripe.enabled && !env.paymongo.enabled) {
+    missing.push("STRIPE_SECRET_KEY or PAYMONGO_SECRET_KEY");
+  }
   if (env.stripe.enabled && !env.stripe.webhookEnabled) missing.push("STRIPE_WEBHOOK_SECRET");
+  if (env.paymongo.enabled && !env.paymongo.webhookEnabled) missing.push("PAYMONGO_WEBHOOK_SECRET");
   if (!env.exchange.enabled) missing.push("EXCHANGE_ENCRYPTION_KEY");
+  if (!env.email.enabled) missing.push("RESEND_API_KEY");
   if (missing.length > 0) {
     // Use console.error so it shows up on Vercel / Railway / Render
     // log dashboards with the proper severity.
