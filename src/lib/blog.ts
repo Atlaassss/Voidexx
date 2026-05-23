@@ -49,7 +49,7 @@ export async function getPost(slug: string): Promise<PostFull | null> {
       Component: mod.default,
       ...frontmatter,
       readingTimeMinutes:
-        frontmatter.readingTimeMinutes ?? estimateReadingTimeFromSlug(slug),
+        frontmatter.readingTimeMinutes ?? (await estimateReadingTime(slug)),
     };
   } catch {
     return null;
@@ -85,7 +85,7 @@ export async function getAllPosts(): Promise<PostMeta[]> {
       slug,
       ...fm,
       readingTimeMinutes:
-        fm.readingTimeMinutes ?? estimateReadingTimeFromSlug(slug),
+        fm.readingTimeMinutes ?? (await estimateReadingTime(slug)),
     } satisfies PostMeta;
   }));
 
@@ -98,16 +98,31 @@ export async function getAllPosts(): Promise<PostMeta[]> {
 }
 
 /**
- * Crude word-count-based estimate. We can't read the MDX body without
- * `fs.readFile` on the source file (the imported module is already a
- * compiled component), so we hash-fallback to a sensible default per
- * slug length. Authors who care can supply `readingTimeMinutes` in the
- * frontmatter.
+ * Estimate reading time by reading the raw .mdx source from disk and
+ * counting words at 230wpm (the median for technical reading).
+ *
+ * We strip the `export const frontmatter = { ... }` block and any code
+ * fences before counting so they don't inflate the estimate. Authors
+ * who want to override can supply `readingTimeMinutes` in frontmatter.
+ *
+ * Falls back to 5 minutes if the file is unreadable for any reason.
  */
-function estimateReadingTimeFromSlug(slug: string): number {
-  // Without pulling raw source, default to 5 minutes — good enough for
-  // a "X min read" badge. Authors should override in frontmatter for
-  // anything substantially longer or shorter.
-  void slug;
-  return 5;
+async function estimateReadingTime(slug: string): Promise<number> {
+  try {
+    const filePath = path.join(process.cwd(), "content", "blog", `${slug}.mdx`);
+    const raw = await fs.readFile(filePath, "utf-8");
+    const stripped = raw
+      // strip the exported frontmatter block (export const ... ;)
+      .replace(/export\s+const\s+frontmatter\s*=\s*\{[\s\S]*?\};?/m, "")
+      // strip fenced code blocks (don't count them as prose)
+      .replace(/```[\s\S]*?```/g, "")
+      // strip JSX expressions
+      .replace(/\{[^{}]*\}/g, "")
+      // strip MDX/Markdown punctuation noise
+      .replace(/[#>*_`~|\-=]+/g, " ");
+    const words = stripped.split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.round(words / 230));
+  } catch {
+    return 5;
+  }
 }
