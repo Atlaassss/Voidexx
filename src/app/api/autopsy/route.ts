@@ -1,4 +1,4 @@
-import { requireUser, asResponse } from "@/lib/auth";
+import { requireUser, asResponse, ensureDbUser } from "@/lib/auth";
 import { AutopsyRequestSchema, badRequest } from "@/lib/validation";
 import { checkAndIncrementQuota } from "@/lib/quota";
 import { runAutopsy } from "@/lib/ai/orchestrator";
@@ -36,6 +36,10 @@ export async function POST(req: Request) {
   const json = await req.json().catch(() => ({}));
   const parsed = AutopsyRequestSchema.safeParse(json);
   if (!parsed.success) return badRequest(parsed.error);
+
+  // Mirror the Clerk identity into the Postgres User table BEFORE any
+  // FK-dependent reads/writes. Idempotent + cached per process.
+  await ensureDbUser(user);
 
   const quota = await checkAndIncrementQuota(user.id);
   if (!quota.allowed) {

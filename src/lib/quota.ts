@@ -2,7 +2,12 @@
  * Free-tier quota check for AI autopsies.
  *
  * Real impl reads/writes `User.freeUsageMonth` in Postgres, reset by a
- * daily cron. In demo mode it's a no-op (always allow).
+ * monthly cron (Phase 6 admin work). In demo mode it's a no-op (always
+ * allow).
+ *
+ * RACE-FREE: increments via a single atomic conditional `updateMany`
+ * statement. Two concurrent requests near the cap can no longer both
+ * pass the check and both increment.
  */
 
 import { env } from "./env";
@@ -24,6 +29,9 @@ export async function checkAndIncrementQuota(userId: string): Promise<QuotaResul
   }
 
   const db = getDb();
+
+  // Look up the plan first. We allow paid tiers unconditionally and only
+  // gate RECON, so this read is correct outside the atomic increment.
   const user = await db.user.findUnique({
     where: { id: userId },
     select: { plan: true, freeUsageMonth: true },
@@ -34,7 +42,23 @@ export async function checkAndIncrementQuota(userId: string): Promise<QuotaResul
   if (user.plan !== "RECON") {
     return { allowed: true, used: user.freeUsageMonth, limit: -1, plan: user.plan };
   }
-  if (user.freeUsageMonth >= FREE_MONTHLY) {
+
+  // Atomic conditional increment. `updateMany` is used (instead of `update`)
+  // so we can include a non-PK predicate in WHERE, which Prisma's `update`
+  // doesn't allow. The single SQL statement compiles to roughly:
+  //   UPDATE "User" SET freeUsageMonth = freeUsageMonth + 1
+  //   WHERE id = $1 AND plan = 'RECON' AND freeUsageMonth < 5;
+  // If `count` is 0 the row was either gone, upgraded, or already at cap.
+  const result = await db.user.updateMany({
+    where: {
+      id: userId,
+      plan: "RECON",
+      freeUsageMonth: { lt: FREE_MONTHLY },
+    },
+    data: { freeUsageMonth: { increment: 1 } },
+  });
+
+  if (result.count === 0) {
     return {
       allowed: false,
       used: user.freeUsageMonth,
@@ -42,10 +66,7 @@ export async function checkAndIncrementQuota(userId: string): Promise<QuotaResul
       plan: "RECON",
     };
   }
-  await db.user.update({
-    where: { id: userId },
-    data: { freeUsageMonth: { increment: 1 } },
-  });
+
   return {
     allowed: true,
     used: user.freeUsageMonth + 1,
