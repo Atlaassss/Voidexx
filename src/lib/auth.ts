@@ -95,10 +95,17 @@ export async function requireUser(): Promise<SessionUser> {
 const _syncedUsers = new Set<string>();
 
 /**
- * Idempotent upsert of a Clerk-authenticated user into the `User` table.
+ * Idempotent mirror of a Clerk-authenticated user into the `User` table.
  *
  * Call this from any route that's about to write a row whose FK points
  * at `User.id` (Trade, Autopsy, Payment, ExchangeConnection, ...).
+ *
+ * On the FIRST mirror for a user (when no DB row exists yet), this also
+ * fires post-signup side effects:
+ *   - Claims any pending /r/<code> referral attribution cookie.
+ *   - Sends the welcome email via the configured email provider.
+ * Both are best-effort — failures are logged but don't break the request.
+ *
  * No-ops when:
  *   - `env.db.enabled` is false (demo mode)
  *   - the user is the deterministic demo session
@@ -113,31 +120,91 @@ export async function ensureDbUser(user: SessionUser): Promise<void> {
   if (!db) return;
 
   try {
-    await db.user.upsert({
+    const existing = await db.user.findUnique({
       where: { id: user.id },
-      // Update is intentionally minimal — we only want to keep contact info
-      // fresh when Clerk has it. Plan/usage/preferences are owned by the app.
-      update: {
-        ...(user.email != null && { email: user.email }),
-        ...(user.username != null && { username: user.username }),
-        ...(user.displayName != null && { displayName: user.displayName }),
-      },
-      create: {
-        id: user.id,
-        // Postgres requires email NOT NULL + unique. Fall back to a synthetic
-        // value when Clerk somehow has no email yet (rare, but possible
-        // mid-onboarding). The synthetic form is unique per user id.
-        email: user.email ?? `${user.id}@no-email.voidexx.local`,
-        username: user.username ?? null,
-        displayName: user.displayName ?? null,
-      },
+      select: { id: true },
     });
+
+    if (existing) {
+      // Existing user — just keep contact info fresh. No side effects.
+      await db.user.update({
+        where: { id: user.id },
+        data: {
+          ...(user.email != null && { email: user.email }),
+          ...(user.username != null && { username: user.username }),
+          ...(user.displayName != null && { displayName: user.displayName }),
+        },
+      });
+    } else {
+      // First-time mirror. We try to create — and if a parallel request
+      // already created the row (P2002 on the unique id), we fall back
+      // to update + skip the post-create side effects (the other request
+      // will run them).
+      let didCreate = false;
+      try {
+        await db.user.create({
+          data: {
+            id: user.id,
+            // Postgres requires email NOT NULL + unique. Fall back to a synthetic
+            // value when Clerk somehow has no email yet (rare, but possible
+            // mid-onboarding). The synthetic form is unique per user id.
+            email: user.email ?? `${user.id}@no-email.voidexx.local`,
+            username: user.username ?? null,
+            displayName: user.displayName ?? null,
+          },
+        });
+        didCreate = true;
+      } catch (err) {
+        const isDup = (err as { code?: string })?.code === "P2002";
+        if (!isDup) throw err;
+        // Lost the race; treat as existing.
+      }
+
+      if (didCreate) {
+        // Post-create side effects — best-effort, parallelised.
+        await Promise.allSettled([
+          claimPendingReferralCookie(user.id),
+          sendWelcomeIfConfigured(user),
+        ]);
+      }
+    }
     _syncedUsers.add(user.id);
   } catch (err) {
     // Don't break the request flow on a sync failure — log and continue.
     // Downstream FK-dependent writes will surface a more specific error
     // if this ever fails for a reason other than transient DB issues.
     console.error("[auth] ensureDbUser failed", err);
+  }
+}
+
+/**
+ * Read the /r/<code> attribution cookie (if any) and claim it for this
+ * user. Wrapped here to keep the dynamic-import boilerplate out of
+ * `ensureDbUser` and to silence the "headers" import in non-request
+ * contexts (cron jobs, etc).
+ */
+async function claimPendingReferralCookie(newUserId: string): Promise<void> {
+  try {
+    const { cookies } = await import("next/headers");
+    const { claimReferralCookie, REFERRAL_COOKIE_NAME } = await import("./referrals");
+    const cookieStore = await cookies();
+    const value = cookieStore.get(REFERRAL_COOKIE_NAME)?.value ?? null;
+    await claimReferralCookie({ newUserId, cookieValue: value });
+  } catch {
+    // cookies() throws in non-request contexts. Silent — no referral to claim.
+  }
+}
+
+/** Send welcome email if email provider is configured. */
+async function sendWelcomeIfConfigured(user: SessionUser): Promise<void> {
+  try {
+    const { sendWelcomeEmail } = await import("./email");
+    await sendWelcomeEmail({
+      to: user.email,
+      displayName: user.displayName ?? user.username ?? null,
+    });
+  } catch (err) {
+    console.error("[auth] welcome email failed", err);
   }
 }
 

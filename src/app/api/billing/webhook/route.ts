@@ -136,7 +136,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const plan = derivePlan(sub);
   if (!plan) return;
 
-  await db.user.update({
+  const updated = await db.user.update({
     where: { id: userId },
     data: {
       plan,
@@ -144,7 +144,14 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       subscriptionStatus: sub.status,
       planRenewsAt: periodEnd(sub),
     },
+    select: { email: true, displayName: true, username: true, plan: true, subscriptionStatus: true },
   });
+
+  // Post-conversion side effects: notify by email AND mark any pending
+  // referral as rewarded. Both are best-effort — never throw from a
+  // webhook handler over a notification failure.
+  await notifyPlanChanged(updated);
+  await rewardReferrerIfPending(userId);
 }
 
 async function handleSubscriptionUpsert(sub: Stripe.Subscription) {
@@ -154,7 +161,7 @@ async function handleSubscriptionUpsert(sub: Stripe.Subscription) {
   const plan = derivePlan(sub);
   if (!plan) return;
 
-  await db.user.update({
+  const updated = await db.user.update({
     where: { id: userId },
     data: {
       plan,
@@ -162,7 +169,10 @@ async function handleSubscriptionUpsert(sub: Stripe.Subscription) {
       subscriptionStatus: sub.status,
       planRenewsAt: periodEnd(sub),
     },
+    select: { email: true, displayName: true, username: true, plan: true, subscriptionStatus: true },
   });
+
+  await notifyPlanChanged(updated);
 }
 
 async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
@@ -170,7 +180,7 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
   const userId = await resolveUserId(sub.customer, sub.metadata?.voidexxUserId);
   if (!userId) return;
 
-  await db.user.update({
+  const updated = await db.user.update({
     where: { id: userId },
     data: {
       plan: "RECON",
@@ -178,7 +188,10 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
       subscriptionStatus: "canceled",
       planRenewsAt: null,
     },
+    select: { email: true, displayName: true, username: true, plan: true, subscriptionStatus: true },
   });
+
+  await notifyPlanChanged(updated);
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -274,4 +287,45 @@ function periodEnd(sub: Stripe.Subscription): Date | null {
   const ts = (item as { current_period_end?: number } | undefined)?.current_period_end;
   if (!ts) return null;
   return new Date(ts * 1000);
+}
+
+/**
+ * Best-effort plan-changed email. Synthetic-address filtering and
+ * provider-disabled handling both live in `lib/email`'s `send()` —
+ * this wrapper just translates the DB shape to the template input.
+ */
+async function notifyPlanChanged(user: {
+  email: string | null;
+  displayName: string | null;
+  username: string | null;
+  plan: string;
+  subscriptionStatus: string | null;
+}): Promise<void> {
+  if (!user.email) return;
+  try {
+    const { sendPlanChangedEmail } = await import("@/lib/email");
+    await sendPlanChangedEmail({
+      to: user.email,
+      displayName: user.displayName ?? user.username ?? null,
+      newPlan: user.plan,
+      status: user.subscriptionStatus,
+    });
+  } catch (err) {
+    console.error("[billing/webhook] plan-changed email failed", err);
+  }
+}
+
+/**
+ * If the user converting to paid was originally referred via /r/<code>,
+ * mark that Referral row rewarded. Idempotent — the underlying SQL is
+ * `updateMany WHERE rewarded=false`, so calling on each invoice has no
+ * effect after the first.
+ */
+async function rewardReferrerIfPending(userId: string): Promise<void> {
+  try {
+    const { markRefereeConverted } = await import("@/lib/referrals");
+    await markRefereeConverted(userId);
+  } catch (err) {
+    console.error("[billing/webhook] reward-referrer failed", err);
+  }
 }

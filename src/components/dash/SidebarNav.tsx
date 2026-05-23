@@ -11,6 +11,7 @@ import {
   LineChart,
   NotebookPen,
   Settings,
+  Share2,
   Shield,
   Trophy,
   Upload,
@@ -29,6 +30,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; group: string }[] = 
   { href: "/dashboard/learn", label: "Learn", icon: BookOpen, group: "Trade" },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, group: "Account" },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard, group: "Account" },
+  { href: "/dashboard/referrals", label: "Referrals", icon: Share2, group: "Account" },
   { href: "/dashboard/admin", label: "Admin", icon: Shield, group: "Admin" },
 ];
 

@@ -30,6 +30,10 @@ const MIN_PHASE_MS = 600;
 export interface OrchestratorInput {
   userId: string;
   isDemoUser: boolean;
+  /** Used only for the post-run "autopsy ready" email. Optional. */
+  userEmail?: string | null;
+  /** Used only for the post-run "autopsy ready" email. Optional. */
+  userDisplayName?: string | null;
   uploadId: string;
   symbol?: string;
   timeframe?: string;
@@ -182,6 +186,19 @@ export async function runAutopsy(input: OrchestratorInput, emit: Emit): Promise<
       }
     });
 
+    // Best-effort post-run notification. Fire-and-forget; failures here
+    // must never bubble up and reverse a successful autopsy. Skipped in
+    // demo mode (no email infrastructure to use).
+    if (!input.isDemoUser && input.userEmail) {
+      void notifyAutopsyReady({
+        email: input.userEmail,
+        displayName: input.userDisplayName ?? null,
+        autopsyId,
+        score,
+        verdict: verdict!.verdict,
+      });
+    }
+
     emit({ event: "done", report: response });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";
@@ -215,4 +232,30 @@ function deriveTags(v: VerdictRead): string[] {
 
 function randomId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * Best-effort autopsy-ready email notification. Logged on failure but
+ * never re-thrown — the autopsy itself succeeded and the user already
+ * has the result in their browser.
+ */
+async function notifyAutopsyReady(opts: {
+  email: string;
+  displayName: string | null;
+  autopsyId: string;
+  score: number;
+  verdict: string;
+}): Promise<void> {
+  try {
+    const { sendAutopsyReadyEmail } = await import("../email");
+    await sendAutopsyReadyEmail({
+      to: opts.email,
+      displayName: opts.displayName,
+      autopsyId: opts.autopsyId,
+      score: opts.score,
+      verdict: opts.verdict,
+    });
+  } catch (err) {
+    console.error("[orchestrator] autopsy-ready email failed", err);
+  }
 }
