@@ -93,7 +93,7 @@ export default async function BillingPage() {
     <>
       <Topbar
         title="Billing"
-        sub={env.stripe.enabled ? "Stripe · live" : "Stripe · demo (set STRIPE_SECRET_KEY)"}
+        sub={billingSubLine()}
       />
 
       <div className="flex-1 space-y-6 p-4 sm:p-6">
@@ -172,7 +172,11 @@ export default async function BillingPage() {
           </div>
 
           <div className="mt-6">
-            <BillingClient currentPlan={view.plan} stripeEnabled={env.stripe.enabled} />
+            <BillingClient
+              currentPlan={view.plan}
+              stripeEnabled={env.stripe.enabled}
+              paymongoEnabled={env.paymongo.enabled}
+            />
           </div>
         </Panel>
 
@@ -211,8 +215,7 @@ export default async function BillingPage() {
   );
 }
 
-function PlanCard({ plan, highlight }: { plan: Plan; highlight: boolean }) {
-  const def = PLANS[plan];
+function PlanCard({ plan, highlight }: { plan: Plan; highlight: boolean }) {  const def = PLANS[plan];
   const checkColor = highlight ? "text-signal-green" : "text-signal-cyan";
   return (
     <div className="bg-void-50/60 p-6">
@@ -239,4 +242,14 @@ function PlanCard({ plan, highlight }: { plan: Plan; highlight: boolean }) {
       </ul>
     </div>
   );
+}
+
+
+
+/** Subline for the Topbar — reflects which billing rails are configured. */
+function billingSubLine(): string {
+  if (env.stripe.enabled && env.paymongo.enabled) return "Stripe + PayMongo · live";
+  if (env.stripe.enabled) return "Stripe · live";
+  if (env.paymongo.enabled) return "PayMongo · live (PH)";
+  return "Demo · set STRIPE_SECRET_KEY or PAYMONGO_SECRET_KEY";
 }

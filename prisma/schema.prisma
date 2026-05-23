@@ -44,6 +44,14 @@ model User {
   stripeSubscriptionId String? @unique
   subscriptionStatus   String? // active, past_due, canceled, incomplete, trialing
 
+  // PayMongo identity (Phase 7.1 — Philippines billing rail)
+  // PayMongo doesn't have customer objects; we track the ACTIVE
+  // PaymentIntent for the most recent paid checkout. On webhook
+  // payment_intent.succeeded we mark the user upgraded. The
+  // /api/cron/payment-expiry sweep clears stale intents older than 1h.
+  paymongoIntentId       String? @unique
+  paymongoIntentExpires  DateTime?
+
   // Referral identity (Phase 7 growth)
   // Personal share code — what we put on the user's /r/<code> link.
   // Lazily backfilled by lib/referrals.ts the first time the user
@@ -337,6 +345,11 @@ enum PaymentProvider {
   PAYPAL
   GCASH
   MAYA
+  // PayMongo unified provider. We keep a single PAYMONGO row instead
+  // of one row per method (GCash/Maya/Card/GrabPay) because PayMongo
+  // returns a single PaymentIntent + Payment regardless of method —
+  // the actual method lands in `description` ("PayMongo · GCash" etc).
+  PAYMONGO
 }
 
 enum PaymentStatus {
