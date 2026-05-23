@@ -84,5 +84,8 @@ export function scoreAutopsy(structure: StructureRead, verdict: VerdictRead): nu
   const damp = 1 - Math.max(0, 0.6 - structure.confidence);
   score = 50 + (score - 50) * damp;
 
-  return Math.max(0, Math.min(100, Math.round(score)));
+  // Floor at 2 (not 0) so multiple catastrophically-bad trades still
+  // differentiate. A literal 0 reads as "not yet scored" to humans;
+  // 2 says "this is the worst end of the scale".
+  return Math.max(2, Math.min(100, Math.round(score)));
 }

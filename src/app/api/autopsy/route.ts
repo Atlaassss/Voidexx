@@ -1,6 +1,6 @@
 import { requireUser, asResponse, ensureDbUser } from "@/lib/auth";
 import { AutopsyRequestSchema, badRequest } from "@/lib/validation";
-import { checkAndIncrementQuota } from "@/lib/quota";
+import { checkAndIncrementQuota, rollbackQuotaIncrement } from "@/lib/quota";
 import { runAutopsy } from "@/lib/ai/orchestrator";
 import type { ProgressEvent } from "@/lib/ai/types";
 
@@ -20,6 +20,11 @@ export const dynamic = "force-dynamic";
  * The server respects request cancellation: if the client closes the
  * connection mid-flight, an AbortController forwards the signal to the
  * OpenAI calls so we don't burn tokens on abandoned uploads.
+ *
+ * Quota is incremented BEFORE the orchestrator runs (so two parallel
+ * uploads can't both pass the cap), and rolled back if the pipeline
+ * fails for any reason — a vision-API hiccup shouldn't cost the user
+ * one of their 5/month free autopsies.
  *
  * NDJSON over fetch streaming is preferred over Server-Sent Events here
  * because SSE doesn't support POST bodies in browsers.
@@ -62,13 +67,26 @@ export async function POST(req: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Track the orchestrator's outcome via the emit callback. The
+      // orchestrator catches its own errors and emits {event:"error"}
+      // rather than throwing, so we can't catch from out here. Instead
+      // we observe the last event seen — `done` means success, anything
+      // else (or absence) means we should refund the quota slot.
+      //
+      // Typed as `string` (not a union) because TS over-narrows reads
+      // through the closure mutation and can't see that emit() reassigns.
+      let outcome: string = "pending";
+
       const emit = (e: ProgressEvent) => {
+        if (e.event === "done") outcome = "done";
+        else if (e.event === "error") outcome = "error";
         try {
           controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
         } catch {
           // controller already closed — request was aborted
         }
       };
+
       try {
         await runAutopsy(
           {
@@ -84,11 +102,19 @@ export async function POST(req: Request) {
           emit,
         );
       } catch (err) {
+        // Defensive — orchestrator shouldn't throw, but if a bug slips
+        // through we still want to surface something to the client.
+        outcome = "error";
         emit({
           event: "error",
           message: err instanceof Error ? err.message : "internal_error",
         });
       } finally {
+        // Refund quota on anything other than a clean `done`. Includes
+        // explicit errors AND client cancellations (no event seen yet).
+        if (outcome !== "done" && quota.plan === "RECON" && quota.allowed) {
+          await rollbackQuotaIncrement(user.id);
+        }
         controller.close();
       }
     },

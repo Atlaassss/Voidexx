@@ -31,6 +31,12 @@ export async function runVerdictPass(opts: {
   signal?: AbortSignal;
 }): Promise<VerdictResult> {
   if (!env.openai.enabled) {
+    // Production guard: refuse to silently serve canned verdicts.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "ai_offline: OPENAI_API_KEY not configured. AI engine is required in production.",
+      );
+    }
     const verdict = mockVerdict(opts.uploadId, opts.structure);
     return {
       verdict,
