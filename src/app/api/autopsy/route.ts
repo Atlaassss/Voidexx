@@ -92,6 +92,8 @@ export async function POST(req: Request) {
           {
             userId: user.id,
             isDemoUser: user.isDemo,
+            userEmail: user.email,
+            userDisplayName: user.displayName,
             uploadId: parsed.data.uploadId,
             symbol: parsed.data.symbol,
             timeframe: parsed.data.timeframe,

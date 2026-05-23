@@ -21,6 +21,9 @@ const stripePriceDesk = process.env.STRIPE_PRICE_DESK;
 const exchangeEncryptionKey = process.env.EXCHANGE_ENCRYPTION_KEY;
 const bingxBaseUrl = process.env.BINGX_BASE_URL;
 
+const resendKey = process.env.RESEND_API_KEY;
+const emailFrom = process.env.EMAIL_FROM_ADDRESS;
+
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION;
 const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID;
@@ -83,6 +86,14 @@ export const env = {
     encryptionKey: exchangeEncryptionKey,
     bingxBaseUrl,
   },
+  email: {
+    // True once Resend is configured. When disabled, every send() call
+    // logs the email and returns success — the welcome / autopsy-ready
+    // / plan-changed flows stay wired without burning real mail.
+    enabled: Boolean(resendKey),
+    resendApiKey: resendKey,
+    fromAddress: emailFrom ?? "Voidexx <ops@voidexx.io>",
+  },
   admin: {
     // Admin panel is "enabled" when both auth AND db are wired — the role
     // check is the real gate, but we can't do role checks without a DB.
@@ -124,6 +135,7 @@ if (process.env.NODE_ENV === "production") {
   if (!env.stripe.enabled) missing.push("STRIPE_SECRET_KEY");
   if (env.stripe.enabled && !env.stripe.webhookEnabled) missing.push("STRIPE_WEBHOOK_SECRET");
   if (!env.exchange.enabled) missing.push("EXCHANGE_ENCRYPTION_KEY");
+  if (!env.email.enabled) missing.push("RESEND_API_KEY");
   if (missing.length > 0) {
     // Use console.error so it shows up on Vercel / Railway / Render
     // log dashboards with the proper severity.

@@ -33,6 +33,7 @@ export function TopNav() {
           <a href="#features" className="hover:text-signal-cyan transition">Features</a>
           <a href="#demo" className="hover:text-signal-cyan transition">Live demo</a>
           <a href="#pricing" className="hover:text-signal-cyan transition">Pricing</a>
+          <Link href="/blog" className="hover:text-signal-cyan transition">Field notes</Link>
           <a href="#faq" className="hover:text-signal-cyan transition">FAQ</a>
           <Link href="/dashboard" className="hover:text-signal-cyan transition">Dashboard</Link>
         </nav>

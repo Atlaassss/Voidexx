@@ -32,25 +32,66 @@ const serif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "VOIDEXX // AI Trade Autopsy",
+  metadataBase: new URL(env.app.url),
+  title: {
+    default: "VOIDEXX // AI Trade Autopsy",
+    template: "%s · VOIDEXX",
+  },
   description:
-    "Upload your losing trades. VOIDEXX exposes the manipulation, liquidity traps, and psychological mistakes destroying your consistency.",
+    "Upload a screenshot of a losing trade. The engine reads the chart, decodes the smart-money manipulation that took your stop, scores your psychology, and writes the autopsy a prop-firm desk would.",
+  applicationName: "VOIDEXX",
+  authors: [{ name: "VOIDEXX Systems" }],
+  creator: "VOIDEXX Systems",
+  publisher: "VOIDEXX Systems",
   keywords: [
     "AI trading",
     "trade journal",
+    "trade autopsy",
     "ICT",
     "SMC",
-    "smart money",
+    "smart money concepts",
+    "liquidity grab",
     "prop firm",
-    "crypto",
-    "forex",
-    "trade analysis",
+    "crypto trading",
+    "forex trading",
+    "trading psychology",
+    "BingX",
+    "trading dashboard",
   ],
+  category: "finance",
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
+    type: "website",
+    siteName: "VOIDEXX",
     title: "VOIDEXX // AI Trade Autopsy",
     description:
       "Bloomberg Terminal meets cyberpunk AI. Find out exactly why your trades lose.",
-    type: "website",
+    url: env.app.url,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "VOIDEXX // AI Trade Autopsy",
+    description:
+      "Drop your losing trade. The engine writes the autopsy a prop-firm desk would.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
   },
 };
 
