@@ -1,5 +1,7 @@
 import { Sidebar } from "@/components/dash/Sidebar";
 import { MobileNav } from "@/components/dash/MobileNav";
+import { HelpWidget } from "@/components/dash/HelpWidget";
+import { OnboardingTour } from "@/components/dash/OnboardingTour";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,6 +12,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="relative z-10 flex flex-1 flex-col">{children}</div>
       </div>
       <MobileNav />
+      <OnboardingTour />
+      <HelpWidget />
     </div>
   );
 }

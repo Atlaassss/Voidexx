@@ -33,6 +33,18 @@ model User {
   plan            Plan         @default(RECON)
   planRenewsAt    DateTime?
   freeUsageMonth  Int          @default(0)
+  // Admin-granted bonus autopsies. Decremented before freeUsageMonth
+  // when computing whether the user is over the limit. Lets support
+  // give a frustrated free-tier user "+5 autopsies on the house"
+  // without elevating them to OPERATOR. Admin grants/revokes via
+  // /api/admin/users/[id] — every change is audit-logged.
+  bonusAutopsies  Int          @default(0)
+  // Soft-suspend flag (Phase 8 admin). When true, the user is logged
+  // out everywhere on next request and refused at every authed route.
+  // Reversible — admin can flip it back. Different from `deletedAt`
+  // which is for hard purges.
+  suspendedAt     DateTime?
+  suspendedReason String?
   // First-of-month timestamp the freeUsageMonth counter belongs to.
   // Lazy-reset: when checkAndIncrementQuota notices the current month
   // is past this date, it zeroes the counter atomically. Avoids needing
@@ -203,6 +215,15 @@ model Autopsy {
 
   modelVersion String   @default("voidexx-vision-1")
   costMicros   Int      @default(0) // ai cost tracking
+
+  // Public share links (Phase 8). When `shareEnabled=true`, the autopsy
+  // is reachable read-only at /share/<shareId> without auth — viral
+  // mechanic for word-of-mouth growth. Disabling clears `shareId` so
+  // the URL stops resolving immediately. shareId is a random 12-char
+  // url-safe token, not the autopsy id, so revoking doesn't break the
+  // owner's own /api/autopsy/[id] view.
+  shareId      String?  @unique
+  shareEnabled Boolean  @default(false)
 
   createdAt    DateTime @default(now())
 
