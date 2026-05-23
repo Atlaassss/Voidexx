@@ -55,3 +55,32 @@ export const isFullyConfigured =
 
 /** Boolean for clients — true when at least one subsystem is missing. */
 export const isDemoMode = !isFullyConfigured;
+
+/**
+ * Loud production guard.
+ *
+ * If we're in `NODE_ENV=production` and any critical subsystem is still
+ * unwired, log a single ERROR-level line at module load. This catches
+ * the failure mode where someone deploys to Vercel without setting one
+ * of the env blocks — the app would silently keep serving demo-mode
+ * autopsies (mocked verdicts, no persistence) to paying customers.
+ *
+ * We don't throw because that would crash production for the OTHER
+ * subsystems' missing keys (e.g. a deploy without S3 yet should still
+ * boot and serve marketing). The loud log is the alert.
+ */
+if (process.env.NODE_ENV === "production") {
+  const missing: string[] = [];
+  if (!env.clerk.enabled) missing.push("CLERK_*");
+  if (!env.db.enabled) missing.push("DATABASE_URL");
+  if (!env.s3.enabled) missing.push("S3_*");
+  if (!env.openai.enabled) missing.push("OPENAI_API_KEY");
+  if (missing.length > 0) {
+    // Use console.error so it shows up on Vercel / Railway / Render
+    // log dashboards with the proper severity.
+    console.error(
+      `[VOIDEXX][PRODUCTION-WARN] Demo mode active — missing env: ${missing.join(", ")}. ` +
+        `Customer-visible features will fall back to mocks/no-ops.`,
+    );
+  }
+}
