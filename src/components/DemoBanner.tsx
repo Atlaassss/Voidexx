@@ -1,11 +1,33 @@
 import { env } from "@/lib/env";
+import { DemoBannerClient } from "./DemoBannerClient";
 
 /**
- * Shows when one or more backend subsystems are unconfigured. Hidden
- * once everything is wired (production). Server component — reads env
- * at request time. Lives at the very top of the document.
+ * Server-side gate for the demo banner.
+ *
+ * Returns null (renders nothing) in any of these cases:
+ *
+ *   1. Every subsystem is wired (production-ready). This is the
+ *      happy path — once you've completed the README launch checklist,
+ *      the banner disappears on its own.
+ *   2. `NEXT_PUBLIC_HIDE_DEMO_BANNER=1` is set. Use this for
+ *      client previews / staging where you want the marketing site
+ *      and dashboard to look "live" even though some subsystems
+ *      are still mocked.
+ *
+ * Otherwise it hands the missing-subsystems list to the client
+ * component, which renders the banner with a session-level dismiss
+ * button.
+ *
+ * Note: server-only secrets (DATABASE_URL, OPENAI_API_KEY, etc.) are
+ * checked here on the server. The list of "missing" subsystems is
+ * passed to the client as plain string tokens — we never leak the
+ * actual secret values to the browser.
  */
 export function DemoBanner() {
+  // Hard-off via env flag — for client previews / staging deploys
+  // where the demo banner would just be visual noise.
+  if (process.env.NEXT_PUBLIC_HIDE_DEMO_BANNER === "1") return null;
+
   const missing: string[] = [];
   if (!env.clerk.enabled) missing.push("auth");
   if (!env.db.enabled) missing.push("db");
@@ -18,18 +40,5 @@ export function DemoBanner() {
 
   if (missing.length === 0) return null;
 
-  return (
-    <div className="relative z-[60] border-b border-signal-amber/30 bg-signal-amber/[0.04]">
-      <div className="mx-auto flex max-w-[1400px] items-center gap-3 px-4 py-1.5 font-mono text-[10px] uppercase tracking-widest2 text-signal-amber sm:px-6">
-        <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-signal-amber" />
-        <span>Demo mode</span>
-        <span className="text-void-700">
-          unwired: {missing.map((m) => `[${m}]`).join(" ")}
-        </span>
-        <span className="ml-auto hidden text-void-700 sm:inline">
-          set env vars in <span className="text-signal-cyan">.env.example</span> to graduate
-        </span>
-      </div>
-    </div>
-  );
+  return <DemoBannerClient missing={missing} />;
 }
