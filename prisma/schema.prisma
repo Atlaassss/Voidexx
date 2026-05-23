@@ -33,6 +33,11 @@ model User {
   plan            Plan         @default(RECON)
   planRenewsAt    DateTime?
   freeUsageMonth  Int          @default(0)
+  // First-of-month timestamp the freeUsageMonth counter belongs to.
+  // Lazy-reset: when checkAndIncrementQuota notices the current month
+  // is past this date, it zeroes the counter atomically. Avoids needing
+  // a cron — every quota check that crosses a month boundary self-heals.
+  freeUsagePeriodStart DateTime @default(now())
 
   // Stripe identity (Phase 4 billing)
   stripeCustomerId     String? @unique

@@ -25,15 +25,25 @@ export async function getOrCreateStripeCustomer(user: SessionUser): Promise<stri
   if (row?.stripeCustomerId) return row.stripeCustomerId;
 
   const stripe = await getStripe();
-  const customer = await stripe.customers.create({
-    // Email is required for receipts. ensureDbUser guarantees we have one
-    // (synthetic placeholder if Clerk hadn't surfaced a real one yet).
-    email: user.email ?? undefined,
-    name: user.displayName ?? undefined,
-    metadata: {
-      voidexxUserId: user.id,
+  const customer = await stripe.customers.create(
+    {
+      // Email is required for receipts. ensureDbUser guarantees we have one
+      // (synthetic placeholder if Clerk hadn't surfaced a real one yet).
+      email: user.email ?? undefined,
+      name: user.displayName ?? undefined,
+      metadata: {
+        voidexxUserId: user.id,
+      },
     },
-  });
+    {
+      // Idempotency on customer creation: two concurrent checkout requests
+      // for the same user can't create two Stripe Customers and orphan one.
+      // The key is stable per user; Stripe returns the same customer on
+      // subsequent calls within 24h, after which the persisted
+      // stripeCustomerId on the User row prevents recreation anyway.
+      idempotencyKey: `customer-create:${user.id}`,
+    },
+  );
 
   await db.user.update({
     where: { id: user.id },

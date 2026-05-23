@@ -30,6 +30,14 @@ export async function runVisionPass(opts: {
   signal?: AbortSignal;
 }): Promise<VisionResult> {
   if (!env.openai.enabled || !opts.imageDataUrl) {
+    // Production guard: refuse to silently serve mock archetypes when
+    // OPENAI_API_KEY is missing in prod. Dev/preview can still mock so
+    // the demo flow works without burning tokens.
+    if (!env.openai.enabled && process.env.NODE_ENV === "production") {
+      throw new Error(
+        "ai_offline: OPENAI_API_KEY not configured. AI engine is required in production.",
+      );
+    }
     const structure = mockStructure(opts.uploadId, opts.hint);
     return {
       structure,
