@@ -54,8 +54,8 @@ export default async function SettingsPage() {
             />
             <Field
               label="Billing"
-              value={env.stripe.enabled ? "Stripe · live" : "Demo (no checkout)"}
-              tone={env.stripe.enabled ? "green" : undefined}
+              value={billingStatusValue(env.stripe.enabled, env.paymongo.enabled)}
+              tone={env.stripe.enabled || env.paymongo.enabled ? "green" : undefined}
             />
             <Field
               label="Exchange"
@@ -102,8 +102,7 @@ function Field({ label, value, tone }: { label: string; value: string; tone?: "g
   );
 }
 
-function Toggle({ label, on = false }: { label: string; on?: boolean }) {
-  return (
+function Toggle({ label, on = false }: { label: string; on?: boolean }) {  return (
     <div className="flex items-center justify-between py-2.5">
       <span className="text-sm text-void-900">{label}</span>
       <span
@@ -119,4 +118,18 @@ function Toggle({ label, on = false }: { label: string; on?: boolean }) {
       </span>
     </div>
   );
+}
+
+
+
+/**
+ * Compose the billing-rail status string. Both rails CAN be live in
+ * parallel (USD via Stripe, PHP via PayMongo). We surface whichever
+ * is configured — and "Demo (no checkout)" only when both are off.
+ */
+function billingStatusValue(stripe: boolean, paymongo: boolean): string {
+  if (stripe && paymongo) return "Stripe + PayMongo · live";
+  if (stripe) return "Stripe · live";
+  if (paymongo) return "PayMongo · live (PH)";
+  return "Demo (no checkout)";
 }
