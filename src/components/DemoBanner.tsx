@@ -14,6 +14,7 @@ export function DemoBanner() {
   if (!env.stripe.enabled) missing.push("billing");
   if (!env.exchange.enabled) missing.push("exchange");
   if (!env.admin.enabled) missing.push("admin");
+  if (!env.email.enabled) missing.push("email");
 
   if (missing.length === 0) return null;
 

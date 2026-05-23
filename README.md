@@ -39,6 +39,11 @@ for AI, payments, exchange wiring and admin to plug into.
 | Vercel Cron (quota reset) | ✅ | Monthly RECON quota bulk reset via `/api/cron/quota-reset` |
 | Structured logging | ✅ | JSON-line prod logger, service-scoped, level-gated |
 | Autopsy retry UX | ✅ | Retry button on pipeline failure, re-runs without re-upload |
+| Referrals + affiliates | ✅ | Per-user share code, `/r/<code>` first-touch attribution cookie, dashboard with copy/share/tier-progress UI, paid-conversion auto-reward via billing webhook |
+| SEO | ✅ | Sitemap, robots, generated OG image, full metadata graph, per-page canonicals |
+| Blog (MDX) | ✅ | File-based at `content/blog/*.mdx`, SSG pre-rendered, custom prose styling, two seed posts |
+| Email (transactional) | ✅ | Resend wrapper with welcome / autopsy-ready / plan-changed templates; demo-mode logs instead of sending |
+| Discord OAuth + push | ⏳ | Deferred to Phase 7.5 — orthogonal to growth foundation |
 
 `✅` shipped · `🟡` partial · `⏳` planned
 
@@ -296,11 +301,23 @@ prisma/
 - Automation page is now real: server fetches the user's connections, client modal handles BingX link with paper-mode locked on (live trading is Phase 6).
 - Pre-Phase-5 hardening included in this PR: quota refund on autopsy failure, lazy monthly quota reset, mock-mode prod refusal, score floor 0→2, Stripe customer idempotency-key.
 
-**Phase 6 — Admin + analytics**
-- `(admin)` route group, user / subscription / ad management, AI cost dashboard, support tickets.
+**Phase 6 — Admin + analytics** ✅ shipped (this PR)
+- `(admin)` route group, user management, audit log, AI cost dashboard.
+- `WebhookEvent` idempotency table — Stripe webhook claims before processing.
+- Live order placement with 2FA consent gate (`/api/exchange/consent` → `/api/exchange/order`); paper mode skips, live requires TOTP-verified consent token.
+- Vercel Cron at `/api/cron/quota-reset` — monthly bulk reset for RECON quota counters.
+- Structured logger (`lib/logger.ts`) — JSON lines in prod, pretty-print in dev.
+- Autopsy retry button — re-runs pipeline against the same screenshot without re-upload.
 
-**Phase 7 — Growth**
-- Referrals, affiliate links, blog (MDX), SEO, push notifications, Discord OAuth + webhook bridge.
+**Phase 7 — Growth (foundation)** ✅ shipped (this PR)
+- **Referrals + affiliates** — per-user 8-char share code, `/r/<code>` redirector with 30-day first-touch attribution cookie, full dashboard at `/dashboard/referrals` (copy code, copy URL, native Share API, tier progress bar, recent invitees with privacy-masked names). Paid-conversion auto-rewards via the billing webhook (`markRefereeConverted`).
+- **SEO** — `metadataBase`, title template, full OpenGraph + Twitter graph, dynamic OG image at `/opengraph-image` (generated with `next/og` in the brand aesthetic), `sitemap.xml` and `robots.txt` via Next 15 file conventions.
+- **Blog** — file-based MDX at `content/blog/*.mdx` with typed frontmatter, custom prose-styling MDX components, SSG pre-rendering. Two seed posts shipped: *Anatomy of a Liquidity Grab* and *Four Archetypes Every Losing Trade Falls Into*.
+- **Transactional email** — Resend integration (`lib/email/`) with hand-rolled HTML templates for the three flows: welcome (sent from `ensureDbUser` on first mirror, with referral cookie claim), autopsy-ready (sent from orchestrator after persist), plan-changed (sent from billing webhook). Demo-mode logs the email instead of sending so the rest of the app stays wired.
+- **Demo contract preserved** — every new subsystem boots without env vars and surfaces unwired-ness in the DemoBanner.
+
+**Phase 7.5 — Growth (Discord + push)** — deferred
+- Discord OAuth + webhook bridge, web push notifications. Orthogonal to the growth foundation; cleaner as a focused follow-up PR.
 
 ---
 

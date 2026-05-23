@@ -44,6 +44,12 @@ model User {
   stripeSubscriptionId String? @unique
   subscriptionStatus   String? // active, past_due, canceled, incomplete, trialing
 
+  // Referral identity (Phase 7 growth)
+  // Personal share code — what we put on the user's /r/<code> link.
+  // Lazily backfilled by lib/referrals.ts the first time the user
+  // visits the referrals dashboard, so existing users self-heal.
+  referralCode    String? @unique
+
   // Refs
   trades          Trade[]
   autopsies       Autopsy[]
@@ -360,14 +366,18 @@ model Notification {
 model Referral {
   id         String  @id @default(cuid())
   fromId     String
-  toId       String
+  toId       String  @unique  // each invitee can only be attributed once
   from       User    @relation("ReferralFrom", fields: [fromId], references: [id], onDelete: Cascade)
   to         User    @relation("ReferralTo", fields: [toId], references: [id], onDelete: Cascade)
-  code       String  @unique
+  // The share-code that minted this referral. Stays denormalised
+  // even if the referrer regenerates their code later.
+  code       String
   rewarded   Boolean @default(false)
+  rewardedAt DateTime?
   createdAt  DateTime @default(now())
 
-  @@unique([fromId, toId])
+  @@index([fromId, createdAt])
+  @@index([code])
 }
 
 model AdPreference {

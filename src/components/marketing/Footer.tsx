@@ -23,7 +23,7 @@ export function Footer() {
           </Link>
         </div>
 
-        <div className="mt-12 grid grid-cols-2 gap-8 border-t border-void-300/70 py-10 font-mono text-[11px] uppercase tracking-widest2 sm:grid-cols-5">
+        <div className="mt-12 grid grid-cols-2 gap-8 border-t border-void-300/70 py-10 font-mono text-[11px] uppercase tracking-widest2 sm:grid-cols-6">
           <FCol title="Product">
             <a href="#features">Features</a>
             <a href="#demo">Live demo</a>
@@ -35,6 +35,12 @@ export function Footer() {
             <Link href="/dashboard/journal">Journal</Link>
             <Link href="/dashboard/automation">Automation</Link>
             <Link href="/dashboard/learn">Learn</Link>
+          </FCol>
+          <FCol title="Resources">
+            <Link href="/blog">Field notes</Link>
+            <Link href="/dashboard/referrals">Referrals</Link>
+            <a href="#">Changelog</a>
+            <a href="#">Roadmap</a>
           </FCol>
           <FCol title="Company">
             <a href="#">About</a>
