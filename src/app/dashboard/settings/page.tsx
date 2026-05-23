@@ -52,6 +52,11 @@ export default async function SettingsPage() {
               value={env.openai.enabled ? "OpenAI · gpt-4o" : "Mock pipeline"}
               tone={env.openai.enabled ? "green" : undefined}
             />
+            <Field
+              label="Billing"
+              value={env.stripe.enabled ? "Stripe · live" : "Demo (no checkout)"}
+              tone={env.stripe.enabled ? "green" : undefined}
+            />
             <Field label="API keys" value="0 / 3 in use" />
           </Panel>
 
