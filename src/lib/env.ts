@@ -83,6 +83,11 @@ export const env = {
     encryptionKey: exchangeEncryptionKey,
     bingxBaseUrl,
   },
+  admin: {
+    // Admin panel is "enabled" when both auth AND db are wired — the role
+    // check is the real gate, but we can't do role checks without a DB.
+    enabled: Boolean(clerkPub && clerkSec && dbUrl),
+  },
 } as const;
 
 /** Boolean for clients — true when ALL critical subsystems are wired. */

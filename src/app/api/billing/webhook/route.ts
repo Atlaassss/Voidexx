@@ -4,6 +4,7 @@ import { env } from "@/lib/env";
 import { getStripe } from "@/lib/billing/stripe";
 import { tryGetDb } from "@/lib/db";
 import { planFromStripePriceId } from "@/lib/billing/plans";
+import { claimWebhookEvent } from "@/lib/webhook-idempotency";
 import type { Plan, PaymentStatus } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -70,6 +71,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true });
   }
 
+  // Idempotency: claim the event before processing. If Stripe delivers
+  // the same event twice (retries, network glitch), the second delivery
+  // is rejected here and we return 200 so Stripe stops retrying.
+  const claim = await claimWebhookEvent("stripe", event.id, event.type, null);
+  if (claim.duplicate) {
+    return NextResponse.json({ received: true, duplicate: true });
+  }
+
   try {
     switch (event.type) {
       case "checkout.session.completed":
@@ -94,9 +103,11 @@ export async function POST(req: Request) {
         // expects a 200 anyway so it stops retrying.
         break;
     }
+    await claim.markDone();
     return NextResponse.json({ received: true });
   } catch (err) {
     console.error(`[billing/webhook] handler failed for ${event.type}`, err);
+    await claim.markFailed(err instanceof Error ? err.message : "unknown");
     // Return 500 so Stripe retries with backoff. If this becomes a
     // persistent error, the Stripe dashboard surfaces it to ops.
     return NextResponse.json({ error: "handler_failed" }, { status: 500 });

@@ -13,6 +13,7 @@ export function DemoBanner() {
   if (!env.openai.enabled) missing.push("ai");
   if (!env.stripe.enabled) missing.push("billing");
   if (!env.exchange.enabled) missing.push("exchange");
+  if (!env.admin.enabled) missing.push("admin");
 
   if (missing.length === 0) return null;
 
