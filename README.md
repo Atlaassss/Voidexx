@@ -30,8 +30,9 @@ for AI, payments, exchange wiring and admin to plug into.
 | AI engine v1 | ✅ | gpt-4o vision + verdict passes, deterministic scorer, NDJSON streaming, 4 archetype mocks |
 | API surface | ✅ | `/api/uploads`, `/api/autopsy` real (auth + zod + quota + DB persistence + streaming); `/api/autopsy/[id]` reads persisted reports |
 | Real AI vision pipeline | ✅ | Streams progress over NDJSON; cost-tracked in `Autopsy.costMicros` |
+| Stripe billing | ✅ | Real Checkout, webhook → plan upgrade, customer portal, cost-tracked Payment rows; demo-mode shows `Stripe · demo` chip |
 | Exchange integrations | ⏳ | BingX first; wiring scaffold in `api/exchange/*` — Phase 5 |
-| Stripe / PayPal / GCash / Maya | ⏳ | Webhook + checkout stubs in place — Phase 4 |
+| GCash / Maya / PayPal | ⏳ | Stripe handles the global market; PH-specific rails via Xendit — Phase 5/6 |
 | Admin panel | ⏳ | Schema-ready, route group `(admin)` not yet built — Phase 6 |
 
 `✅` shipped · `🟡` partial · `⏳` planned
@@ -100,6 +101,7 @@ relevant block:
 | Database | `DATABASE_URL` (Postgres / Supabase) | `/api/autopsy` persists `Trade` + `Autopsy` rows; quota counter ticks on `User.freeUsageMonth`; `/api/autopsy/[id]` reads them back |
 | Storage | `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (+ optional `S3_ENDPOINT` for R2) | Upload page hits real presigned PUT URLs; uploads stream directly browser → S3 with progress; orchestrator fetches the bytes for the vision pass |
 | AI | `OPENAI_API_KEY` | Vision + verdict passes hit `gpt-4o`; `Autopsy.costMicros` tracks per-trade USD cost; without it, the orchestrator returns one of 4 self-coherent demo archetypes keyed off `uploadId` hash |
+| Billing | `STRIPE_SECRET_KEY` + `STRIPE_PRICE_OPERATOR` + `STRIPE_PRICE_DESK` (+ `STRIPE_WEBHOOK_SECRET` for prod) | `/api/billing/checkout` issues real Stripe Checkout sessions; `/api/billing/webhook` upgrades/downgrades on `checkout.session.completed` etc.; `/api/billing/portal` mounts the Stripe customer portal for self-service plan changes |
 
 Type-check:
 
@@ -270,8 +272,15 @@ prisma/
 - Mock fallback with 4 self-coherent archetypes (BTC trap, EUR clean, SOL FOMO, XAU sniper) keyed off uploadId hash for diverse demos.
 - Real `GET /api/autopsy/[id]` returning persisted reports.
 
-**Phase 4 — Billing live**
-- Stripe Checkout, webhook → plan upgrade, GCash & Maya via Xendit, refund flow.
+**Phase 4 — Billing live** ✅ shipped (this PR)
+- Stripe Checkout via `/api/billing/checkout` (zod + auth + ensureDbUser + idempotency keys).
+- Stripe webhook at `/api/billing/webhook` with signature verification, handles checkout.session.completed, customer.subscription.created/updated/deleted, invoice.payment_succeeded/failed.
+- Customer Portal via `/api/billing/portal` for self-service plan changes, payment method updates, cancellation.
+- `lib/billing/plans.ts` is the SSOT for plan id ↔ Stripe price id ↔ feature bullets.
+- Billing page reads real `User.plan` / `freeUsageMonth` / `planRenewsAt` / `subscriptionStatus` from Postgres, falls back to demo data when unconfigured. Buttons disable while a checkout request is in flight, show "Current plan" when already on that tier.
+- New User columns: `stripeCustomerId`, `stripeSubscriptionId`, `subscriptionStatus`. Migration in `prisma/migrations/20260523000001_billing/`.
+- Pre-Phase-4 hardening: Clerk → User row lazy upsert (`ensureDbUser`); race-free quota increment via atomic `updateMany`; production warning when env blocks are missing.
+- PayPal / GCash / Maya intentionally deferred — Stripe covers the global market well enough for v1 and PH-specific rails (Xendit) are a Phase 5/6 follow-up.
 
 **Phase 5 — Exchange wiring**
 - BingX first (read-only → paper → live), encrypted credential vault, daily-loss cap engine, tilt lockouts.

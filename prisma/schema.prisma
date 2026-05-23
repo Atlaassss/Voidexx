@@ -34,6 +34,11 @@ model User {
   planRenewsAt    DateTime?
   freeUsageMonth  Int          @default(0)
 
+  // Stripe identity (Phase 4 billing)
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  subscriptionStatus   String? // active, past_due, canceled, incomplete, trialing
+
   // Refs
   trades          Trade[]
   autopsies       Autopsy[]
