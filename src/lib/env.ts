@@ -12,6 +12,12 @@ const clerkSec = process.env.CLERK_SECRET_KEY;
 const dbUrl = process.env.DATABASE_URL;
 const openaiKey = process.env.OPENAI_API_KEY;
 
+const stripeSec = process.env.STRIPE_SECRET_KEY;
+const stripeWebhook = process.env.STRIPE_WEBHOOK_SECRET;
+const stripePub = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+const stripePriceOperator = process.env.STRIPE_PRICE_OPERATOR;
+const stripePriceDesk = process.env.STRIPE_PRICE_DESK;
+
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION;
 const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID;
@@ -38,6 +44,26 @@ export const env = {
     enabled: Boolean(openaiKey),
     apiKey: openaiKey,
   },
+  stripe: {
+    // Stripe needs at minimum the secret key to issue checkout sessions.
+    // The webhook secret is needed only to verify inbound events; we
+    // surface it as a separate flag so the checkout flow can be partially
+    // wired (test mode) before webhook secrets are provisioned.
+    enabled: Boolean(stripeSec),
+    webhookEnabled: Boolean(stripeSec && stripeWebhook),
+    secretKey: stripeSec,
+    publishableKey: stripePub,
+    webhookSecret: stripeWebhook,
+    priceOperator: stripePriceOperator,
+    priceDesk: stripePriceDesk,
+    portalReturnUrl:
+      process.env.STRIPE_PORTAL_RETURN_URL ??
+      `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/dashboard/billing`,
+    successUrl:
+      `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/dashboard/billing?checkout=success`,
+    cancelUrl:
+      `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/dashboard/billing?checkout=cancelled`,
+  },
   s3: {
     enabled: Boolean(s3Bucket && s3Region && s3AccessKeyId && s3SecretAccessKey),
     bucket: s3Bucket,
@@ -51,7 +77,42 @@ export const env = {
 
 /** Boolean for clients — true when ALL critical subsystems are wired. */
 export const isFullyConfigured =
-  env.clerk.enabled && env.db.enabled && env.s3.enabled && env.openai.enabled;
+  env.clerk.enabled &&
+  env.db.enabled &&
+  env.s3.enabled &&
+  env.openai.enabled &&
+  env.stripe.enabled;
 
 /** Boolean for clients — true when at least one subsystem is missing. */
 export const isDemoMode = !isFullyConfigured;
+
+/**
+ * Loud production guard.
+ *
+ * If we're in `NODE_ENV=production` and any critical subsystem is still
+ * unwired, log a single ERROR-level line at module load. This catches
+ * the failure mode where someone deploys to Vercel without setting one
+ * of the env blocks — the app would silently keep serving demo-mode
+ * autopsies (mocked verdicts, no persistence) to paying customers.
+ *
+ * We don't throw because that would crash production for the OTHER
+ * subsystems' missing keys (e.g. a deploy without S3 yet should still
+ * boot and serve marketing). The loud log is the alert.
+ */
+if (process.env.NODE_ENV === "production") {
+  const missing: string[] = [];
+  if (!env.clerk.enabled) missing.push("CLERK_*");
+  if (!env.db.enabled) missing.push("DATABASE_URL");
+  if (!env.s3.enabled) missing.push("S3_*");
+  if (!env.openai.enabled) missing.push("OPENAI_API_KEY");
+  if (!env.stripe.enabled) missing.push("STRIPE_SECRET_KEY");
+  if (env.stripe.enabled && !env.stripe.webhookEnabled) missing.push("STRIPE_WEBHOOK_SECRET");
+  if (missing.length > 0) {
+    // Use console.error so it shows up on Vercel / Railway / Render
+    // log dashboards with the proper severity.
+    console.error(
+      `[VOIDEXX][PRODUCTION-WARN] Demo mode active — missing env: ${missing.join(", ")}. ` +
+        `Customer-visible features will fall back to mocks/no-ops.`,
+    );
+  }
+}

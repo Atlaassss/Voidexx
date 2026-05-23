@@ -8,9 +8,18 @@
  *
  * Route handlers should prefer `requireUser()` which throws a 401
  * Response when no session exists and Clerk is configured.
+ *
+ * `ensureDbUser()` lazily upserts a `User` row on first authenticated
+ * touch. This is needed because Clerk owns the identity but Postgres
+ * owns the FK constraints (Trade.userId, Autopsy.userId, Payment.userId).
+ * Without this, a freshly-signed-up Clerk user would be locked out of
+ * their own free tier on first request because `findUnique({where:{id}})`
+ * returns null. A future Clerk webhook can do this earlier; until then,
+ * lazy upsert is safe and idempotent.
  */
 
 import { env } from "./env";
+import { tryGetDb } from "./db";
 
 export interface SessionUser {
   id: string;
@@ -71,6 +80,65 @@ export async function requireUser(): Promise<SessionUser> {
     });
   }
   return u;
+}
+
+/**
+ * In-process cache of Clerk user ids that have already been mirrored to
+ * the Postgres `User` table during this server lifecycle. Resets on cold
+ * start, which is fine: re-running an idempotent upsert is cheap. The
+ * cache exists purely to keep the hot path (every authenticated request)
+ * from issuing a redundant `UPSERT` on subsequent calls.
+ *
+ * NOTE: in a multi-instance deployment each instance maintains its own
+ * cache. This is correct — at worst one upsert per instance per user.
+ */
+const _syncedUsers = new Set<string>();
+
+/**
+ * Idempotent upsert of a Clerk-authenticated user into the `User` table.
+ *
+ * Call this from any route that's about to write a row whose FK points
+ * at `User.id` (Trade, Autopsy, Payment, ExchangeConnection, ...).
+ * No-ops when:
+ *   - `env.db.enabled` is false (demo mode)
+ *   - the user is the deterministic demo session
+ *   - we've already synced this id during this process lifetime
+ */
+export async function ensureDbUser(user: SessionUser): Promise<void> {
+  if (!env.db.enabled) return;
+  if (user.isDemo) return;
+  if (_syncedUsers.has(user.id)) return;
+
+  const db = tryGetDb();
+  if (!db) return;
+
+  try {
+    await db.user.upsert({
+      where: { id: user.id },
+      // Update is intentionally minimal — we only want to keep contact info
+      // fresh when Clerk has it. Plan/usage/preferences are owned by the app.
+      update: {
+        ...(user.email != null && { email: user.email }),
+        ...(user.username != null && { username: user.username }),
+        ...(user.displayName != null && { displayName: user.displayName }),
+      },
+      create: {
+        id: user.id,
+        // Postgres requires email NOT NULL + unique. Fall back to a synthetic
+        // value when Clerk somehow has no email yet (rare, but possible
+        // mid-onboarding). The synthetic form is unique per user id.
+        email: user.email ?? `${user.id}@no-email.voidexx.local`,
+        username: user.username ?? null,
+        displayName: user.displayName ?? null,
+      },
+    });
+    _syncedUsers.add(user.id);
+  } catch (err) {
+    // Don't break the request flow on a sync failure — log and continue.
+    // Downstream FK-dependent writes will surface a more specific error
+    // if this ever fails for a reason other than transient DB issues.
+    console.error("[auth] ensureDbUser failed", err);
+  }
 }
 
 /**
