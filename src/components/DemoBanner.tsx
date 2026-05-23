@@ -12,6 +12,7 @@ export function DemoBanner() {
   if (!env.s3.enabled) missing.push("uploads");
   if (!env.openai.enabled) missing.push("ai");
   if (!env.stripe.enabled) missing.push("billing");
+  if (!env.exchange.enabled) missing.push("exchange");
 
   if (missing.length === 0) return null;
 

@@ -31,8 +31,9 @@ for AI, payments, exchange wiring and admin to plug into.
 | API surface | ✅ | `/api/uploads`, `/api/autopsy` real (auth + zod + quota + DB persistence + streaming); `/api/autopsy/[id]` reads persisted reports |
 | Real AI vision pipeline | ✅ | Streams progress over NDJSON; cost-tracked in `Autopsy.costMicros` |
 | Stripe billing | ✅ | Real Checkout, webhook → plan upgrade, customer portal, cost-tracked Payment rows; demo-mode shows `Stripe · demo` chip |
-| Exchange integrations | ⏳ | BingX first; wiring scaffold in `api/exchange/*` — Phase 5 |
-| GCash / Maya / PayPal | ⏳ | Stripe handles the global market; PH-specific rails via Xendit — Phase 5/6 |
+| Exchange wiring | ✅ | BingX read-only API connect/probe/refresh; AES-256-GCM credential vault; risk engine primitives; automation dashboard wired to live balance |
+| GCash / Maya / PayPal | ⏳ | Stripe handles the global market; PH-specific rails via Xendit — Phase 6 |
+| Live order placement | ⏳ | Read-only in v1; admin-gated `placeOrder` lands in Phase 6 |
 | Admin panel | ⏳ | Schema-ready, route group `(admin)` not yet built — Phase 6 |
 
 `✅` shipped · `🟡` partial · `⏳` planned
@@ -282,8 +283,14 @@ prisma/
 - Pre-Phase-4 hardening: Clerk → User row lazy upsert (`ensureDbUser`); race-free quota increment via atomic `updateMany`; production warning when env blocks are missing.
 - PayPal / GCash / Maya intentionally deferred — Stripe covers the global market well enough for v1 and PH-specific rails (Xendit) are a Phase 5/6 follow-up.
 
-**Phase 5 — Exchange wiring**
-- BingX first (read-only → paper → live), encrypted credential vault, daily-loss cap engine, tilt lockouts.
+**Phase 5 — Exchange wiring** ✅ shipped (this PR)
+- BingX REST adapter (`lib/exchange/bingx.ts`) — HMAC-SHA256 signed `getBalance`, with proper error mapping (auth/rate-limit/upstream-down).
+- AES-256-GCM credential vault in `lib/crypto.ts` — 12-byte random IV + 16-byte tag per record, `v1:` versioned envelope, base64-or-hex 32-byte key. Demo-mode plaintext fallback (`plain:`) refused in production.
+- `POST /api/exchange/connect` probes credentials BEFORE persisting (no garbage rows on bad keys), then encrypts secrets and upserts an `ExchangeConnection`.
+- `GET /api/exchange/[id]` refreshes balance + caches it; `DELETE /api/exchange/[id]` revokes and wipes the encrypted blob.
+- Risk engine (`lib/exchange/risk.ts`) — pure `isLockedOut(state, caps)` over daily-loss cap / max-concurrent / tilt cool-down. Wires into Phase 6 order placement.
+- Automation page is now real: server fetches the user's connections, client modal handles BingX link with paper-mode locked on (live trading is Phase 6).
+- Pre-Phase-5 hardening included in this PR: quota refund on autopsy failure, lazy monthly quota reset, mock-mode prod refusal, score floor 0→2, Stripe customer idempotency-key.
 
 **Phase 6 — Admin + analytics**
 - `(admin)` route group, user / subscription / ad management, AI cost dashboard, support tickets.

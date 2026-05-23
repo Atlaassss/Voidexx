@@ -18,6 +18,9 @@ const stripePub = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 const stripePriceOperator = process.env.STRIPE_PRICE_OPERATOR;
 const stripePriceDesk = process.env.STRIPE_PRICE_DESK;
 
+const exchangeEncryptionKey = process.env.EXCHANGE_ENCRYPTION_KEY;
+const bingxBaseUrl = process.env.BINGX_BASE_URL;
+
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION;
 const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID;
@@ -73,6 +76,13 @@ export const env = {
     endpoint: s3Endpoint,
     publicUrl: s3PublicUrl,
   },
+  exchange: {
+    // True once we have a key to encrypt API secrets with. The connect
+    // route refuses to persist credentials in production without it.
+    enabled: Boolean(exchangeEncryptionKey),
+    encryptionKey: exchangeEncryptionKey,
+    bingxBaseUrl,
+  },
 } as const;
 
 /** Boolean for clients — true when ALL critical subsystems are wired. */
@@ -81,7 +91,8 @@ export const isFullyConfigured =
   env.db.enabled &&
   env.s3.enabled &&
   env.openai.enabled &&
-  env.stripe.enabled;
+  env.stripe.enabled &&
+  env.exchange.enabled;
 
 /** Boolean for clients — true when at least one subsystem is missing. */
 export const isDemoMode = !isFullyConfigured;
@@ -107,6 +118,7 @@ if (process.env.NODE_ENV === "production") {
   if (!env.openai.enabled) missing.push("OPENAI_API_KEY");
   if (!env.stripe.enabled) missing.push("STRIPE_SECRET_KEY");
   if (env.stripe.enabled && !env.stripe.webhookEnabled) missing.push("STRIPE_WEBHOOK_SECRET");
+  if (!env.exchange.enabled) missing.push("EXCHANGE_ENCRYPTION_KEY");
   if (missing.length > 0) {
     // Use console.error so it shows up on Vercel / Railway / Render
     // log dashboards with the proper severity.

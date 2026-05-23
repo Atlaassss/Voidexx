@@ -251,6 +251,11 @@ model ExchangeConnection {
   paperMode   Boolean  @default(true)
   enabled     Boolean  @default(true)
   lastCheck   DateTime?
+  // Cache for the dashboard. Refreshed when /api/exchange/[id] is hit;
+  // also populated on initial connect probe.
+  lastBalanceCents BigInt?
+  lastBalanceAt    DateTime?
+  lastError        String?
   createdAt   DateTime @default(now())
 
   logs        AutomationLog[]
