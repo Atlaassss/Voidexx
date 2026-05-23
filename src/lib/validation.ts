@@ -22,6 +22,16 @@ export const AutopsyRequestSchema = z.object({
 
 export type AutopsyRequestPayload = z.infer<typeof AutopsyRequestSchema>;
 
+export const ExchangeConnectSchema = z.object({
+  venue: z.enum(["BINGX", "BINANCE", "BYBIT", "OKX", "KUCOIN", "MT5"]),
+  apiKey: z.string().min(8).max(256),
+  apiSecret: z.string().min(8).max(256),
+  passphrase: z.string().max(256).optional(),
+  paperMode: z.boolean().default(true),
+});
+
+export type ExchangeConnectPayload = z.infer<typeof ExchangeConnectSchema>;
+
 /** Convert a ZodError into a 400 Response with a flat error map. */
 export function badRequest(error: z.ZodError) {
   return new Response(

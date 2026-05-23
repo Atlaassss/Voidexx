@@ -57,6 +57,11 @@ export default async function SettingsPage() {
               value={env.stripe.enabled ? "Stripe · live" : "Demo (no checkout)"}
               tone={env.stripe.enabled ? "green" : undefined}
             />
+            <Field
+              label="Exchange"
+              value={env.exchange.enabled ? "Encrypted · ready" : "Demo (no encryption key)"}
+              tone={env.exchange.enabled ? "green" : undefined}
+            />
             <Field label="API keys" value="0 / 3 in use" />
           </Panel>
 
