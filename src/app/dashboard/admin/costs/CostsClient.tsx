@@ -20,15 +20,45 @@ interface CostData {
   demo?: boolean;
 }
 
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "ok"; data: CostData }
+  | { kind: "error"; message: string };
+
 export function CostsClient() {
-  const [data, setData] = useState<CostData | null>(null);
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [days, setDays] = useState(30);
 
   useEffect(() => {
-    fetch(`/api/admin/costs?days=${days}`)
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => {});
+    let cancelled = false;
+    setState({ kind: "loading" });
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/costs?days=${days}`);
+        if (!res.ok) {
+          let message = `HTTP ${res.status}`;
+          try {
+            const body = (await res.json()) as { error?: string; message?: string };
+            message = body.message ?? body.error ?? message;
+          } catch {
+            // ignore
+          }
+          throw new Error(message);
+        }
+        const data = (await res.json()) as CostData;
+        if (!cancelled) setState({ kind: "ok", data });
+      } catch (err) {
+        if (!cancelled) {
+          setState({
+            kind: "error",
+            message: err instanceof Error ? err.message : "unknown error",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [days]);
 
   return (
@@ -53,110 +83,130 @@ export function CostsClient() {
         ))}
       </div>
 
-      {!data ? (
+      {state.kind === "loading" && (
         <div className="font-mono text-sm text-void-700">Loading cost data...</div>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiCard
-              label="Total AI Spend"
-              value={`$${data.totalCostUsd.toFixed(2)}`}
-              icon={DollarSign}
-              color="text-signal-red"
-            />
-            <KpiCard
-              label="Autopsies Run"
-              value={data.totalAutopsies.toLocaleString()}
-              icon={Brain}
-              color="text-signal-violet"
-            />
-            <KpiCard
-              label="Avg / Autopsy"
-              value={`$${data.avgCostPerAutopsy.toFixed(4)}`}
-              icon={TrendingDown}
-              color="text-signal-cyan"
-            />
-            <KpiCard
-              label="Daily Run Rate"
-              value={`$${(data.totalCostUsd / Math.max(1, data.periodDays)).toFixed(2)}/d`}
-              icon={Activity}
-              color="text-signal-amber"
-            />
+      )}
+
+      {state.kind === "error" && (
+        <div className="border border-signal-red/40 bg-signal-red/[0.06] p-4 font-mono text-[11px] text-signal-red">
+          <AlertTriangle className="mr-2 inline h-3 w-3" />
+          Failed to load cost data: {state.message}
+          <button
+            type="button"
+            onClick={() => setDays((d) => d)}
+            className="ml-3 underline hover:text-signal-amber"
+          >
+            retry
+          </button>
+        </div>
+      )}
+
+      {state.kind === "ok" && <CostsView data={state.data} />}
+    </div>
+  );
+}
+
+function CostsView({ data }: { data: CostData }) {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          label="Total AI Spend"
+          value={`$${data.totalCostUsd.toFixed(2)}`}
+          icon={DollarSign}
+          color="text-signal-red"
+        />
+        <KpiCard
+          label="Autopsies Run"
+          value={data.totalAutopsies.toLocaleString()}
+          icon={Brain}
+          color="text-signal-violet"
+        />
+        <KpiCard
+          label="Avg / Autopsy"
+          value={`$${data.avgCostPerAutopsy.toFixed(4)}`}
+          icon={TrendingDown}
+          color="text-signal-cyan"
+        />
+        <KpiCard
+          label="Daily Run Rate"
+          value={`$${(data.totalCostUsd / Math.max(1, data.periodDays)).toFixed(2)}/d`}
+          icon={Activity}
+          color="text-signal-amber"
+        />
+      </div>
+
+      <Panel title="Daily cost" meta={`${data.daily.length} days`}>
+        {data.daily.length === 0 ? (
+          <div className="py-6 text-center font-mono text-[11px] text-void-700">
+            No autopsies in this window.
           </div>
+        ) : (
+          <div className="space-y-1.5">
+            {data.daily.map((d) => {
+              const maxCost = Math.max(...data.daily.map((x) => x.costUsd), 0.0001);
+              const barWidth = (d.costUsd / maxCost) * 100;
+              return (
+                <div key={d.date} className="flex items-center gap-3">
+                  <span className="w-16 shrink-0 font-mono text-[10px] text-void-700">
+                    {d.date.slice(5)}
+                  </span>
+                  <div className="relative flex-1 bg-void-200">
+                    <div
+                      className="h-3 bg-signal-violet/40"
+                      style={{ width: `${barWidth}%` }}
+                    />
+                  </div>
+                  <span className="w-16 shrink-0 text-right font-mono text-[10px] text-void-800">
+                    ${d.costUsd.toFixed(2)}
+                  </span>
+                  <span className="w-10 shrink-0 text-right font-mono text-[10px] text-void-700">
+                    ×{d.count}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
 
-          <Panel title="Daily cost" meta={`${data.daily.length} days`}>
-            {data.daily.length === 0 ? (
-              <div className="py-6 text-center font-mono text-[11px] text-void-700">
-                No autopsies in this window.
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {data.daily.map((d) => {
-                  const maxCost = Math.max(...data.daily.map((x) => x.costUsd), 0.0001);
-                  const barWidth = (d.costUsd / maxCost) * 100;
-                  return (
-                    <div key={d.date} className="flex items-center gap-3">
-                      <span className="w-16 shrink-0 font-mono text-[10px] text-void-700">
-                        {d.date.slice(5)}
-                      </span>
-                      <div className="relative flex-1 bg-void-200">
-                        <div
-                          className="h-3 bg-signal-violet/40"
-                          style={{ width: `${barWidth}%` }}
-                        />
-                      </div>
-                      <span className="w-16 shrink-0 text-right font-mono text-[10px] text-void-800">
-                        ${d.costUsd.toFixed(2)}
-                      </span>
-                      <span className="w-10 shrink-0 text-right font-mono text-[10px] text-void-700">
-                        ×{d.count}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Panel>
+      <Panel title="Cost by model" meta={`${data.byModel.length} variants`}>
+        {data.byModel.length === 0 ? (
+          <div className="py-6 text-center font-mono text-[11px] text-void-700">
+            No model usage in this window.
+          </div>
+        ) : (
+          <table className="w-full font-mono text-[11px]">
+            <thead>
+              <tr className="border-b border-void-300/70 text-left uppercase tracking-widest2 text-void-700">
+                <th className="px-2 py-2 font-normal">Model</th>
+                <th className="px-2 py-2 text-right font-normal">Cost</th>
+                <th className="px-2 py-2 text-right font-normal">Runs</th>
+                <th className="px-2 py-2 text-right font-normal">Avg</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.byModel.map((m) => (
+                <tr key={m.model} className="border-b border-void-300/40">
+                  <td className="px-2 py-2 text-signal-cyan">{m.model}</td>
+                  <td className="px-2 py-2 text-right text-void-800">
+                    ${m.costUsd.toFixed(2)}
+                  </td>
+                  <td className="px-2 py-2 text-right text-void-800">{m.count}</td>
+                  <td className="px-2 py-2 text-right text-void-700">
+                    ${m.avgCostUsd.toFixed(4)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
 
-          <Panel title="Cost by model" meta={`${data.byModel.length} variants`}>
-            {data.byModel.length === 0 ? (
-              <div className="py-6 text-center font-mono text-[11px] text-void-700">
-                No model usage in this window.
-              </div>
-            ) : (
-              <table className="w-full font-mono text-[11px]">
-                <thead>
-                  <tr className="border-b border-void-300/70 text-left uppercase tracking-widest2 text-void-700">
-                    <th className="px-2 py-2 font-normal">Model</th>
-                    <th className="px-2 py-2 text-right font-normal">Cost</th>
-                    <th className="px-2 py-2 text-right font-normal">Runs</th>
-                    <th className="px-2 py-2 text-right font-normal">Avg</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.byModel.map((m) => (
-                    <tr key={m.model} className="border-b border-void-300/40">
-                      <td className="px-2 py-2 text-signal-cyan">{m.model}</td>
-                      <td className="px-2 py-2 text-right text-void-800">
-                        ${m.costUsd.toFixed(2)}
-                      </td>
-                      <td className="px-2 py-2 text-right text-void-800">{m.count}</td>
-                      <td className="px-2 py-2 text-right text-void-700">
-                        ${m.avgCostUsd.toFixed(4)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Panel>
-
-          {data.demo && (
-            <div className="border border-signal-amber/40 bg-signal-amber/[0.06] p-3 font-mono text-[11px] text-signal-amber">
-              <AlertTriangle className="mr-2 inline h-3 w-3" />
-              Demo mode — mock cost data. Set DATABASE_URL to read real Autopsy.costMicros.
-            </div>
-          )}
+      {data.demo && (
+        <div className="border border-signal-amber/40 bg-signal-amber/[0.06] p-3 font-mono text-[11px] text-signal-amber">
+          <AlertTriangle className="mr-2 inline h-3 w-3" />
+          Demo mode — mock cost data. Set DATABASE_URL to read real Autopsy.costMicros.
         </div>
       )}
     </div>

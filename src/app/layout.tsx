@@ -3,6 +3,7 @@ import { Anton, Geist, JetBrains_Mono, Instrument_Serif } from "next/font/google
 import "./globals.css";
 import { env } from "@/lib/env";
 import { DemoBanner } from "@/components/DemoBanner";
+import { Toaster } from "@/components/Toaster";
 
 const display = Anton({
   weight: "400",
@@ -115,6 +116,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <body className={bodyClass}>
             <DemoBanner />
             {children}
+            <Toaster />
           </body>
         </html>
       </ClerkProvider>
@@ -125,6 +127,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className={bodyClass}>
         <DemoBanner />
         {children}
+        <Toaster />
       </body>
     </html>
   );

@@ -1,13 +1,14 @@
-import { Bell, Cpu, Wifi } from "lucide-react";
+import { Cpu, Wifi } from "lucide-react";
 import { TopbarClock } from "./TopbarClock";
 import { TopbarSearch } from "./TopbarSearch";
+import { TopbarBell } from "./TopbarBell";
 import { UserChip } from "./UserChip";
 
 /**
  * Dashboard topbar. Server component so it can resolve session info
  * (UserChip) and avoid hydration jitter for the static parts. The
- * clock and search input are split into client components so the
- * shell doesn't re-render on each tick.
+ * clock, search, and notification bell are split into client
+ * components so the shell doesn't re-render on each tick / popover.
  */
 export function Topbar({ title, sub }: { title: string; sub?: string }) {
   return (
@@ -29,10 +30,7 @@ export function Topbar({ title, sub }: { title: string; sub?: string }) {
         <TopbarClock />
       </div>
 
-      <button className="relative grid h-9 w-9 place-items-center border border-void-300/70 bg-void-100/40 text-void-700 hover:text-signal-cyan">
-        <Bell className="h-4 w-4" />
-        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-signal-amber" />
-      </button>
+      <TopbarBell />
 
       <UserChip />
     </header>

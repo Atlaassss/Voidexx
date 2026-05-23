@@ -2,6 +2,8 @@ import { Topbar } from "@/components/dash/Topbar";
 import { Panel } from "@/components/dash/Panel";
 import { getSessionUser } from "@/lib/auth";
 import { env } from "@/lib/env";
+import { SettingsToggles } from "./SettingsToggles";
+import { SettingsActions } from "./SettingsActions";
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
@@ -66,19 +68,25 @@ export default async function SettingsPage() {
           </Panel>
 
           <Panel title="Notifications">
-            <Toggle label="Daily AI insight email" on />
-            <Toggle label="Tilt detector push" on />
-            <Toggle label="Funding-rate alerts" />
-            <Toggle label="Discord webhooks" />
+            <SettingsToggles />
           </Panel>
 
           <Panel title="Data">
             <Field label="Trades stored" value="127" />
             <Field label="Storage" value="38 / 500 MB" />
-            <button className="btn-ghost mt-3">Export data</button>
-            <button className="btn-ghost ml-2 mt-3 border-signal-red/60 text-signal-red hover:border-signal-red hover:text-signal-red">
-              Purge account
-            </button>
+            <SettingsActions
+              isDemo={isDemo}
+              user={
+                user
+                  ? {
+                      id: user.id,
+                      displayName: user.displayName,
+                      username: user.username,
+                      email: user.email,
+                    }
+                  : null
+              }
+            />
           </Panel>
         </div>
       </div>
@@ -101,26 +109,6 @@ function Field({ label, value, tone }: { label: string; value: string; tone?: "g
     </div>
   );
 }
-
-function Toggle({ label, on = false }: { label: string; on?: boolean }) {  return (
-    <div className="flex items-center justify-between py-2.5">
-      <span className="text-sm text-void-900">{label}</span>
-      <span
-        className={`relative inline-block h-5 w-10 cursor-pointer border ${
-          on ? "border-signal-green bg-signal-green/20" : "border-void-400 bg-void-200"
-        }`}
-      >
-        <span
-          className={`absolute top-1/2 h-3 w-3 -translate-y-1/2 transition-all ${
-            on ? "left-[calc(100%-14px)] bg-signal-green" : "left-1 bg-void-700"
-          }`}
-        />
-      </span>
-    </div>
-  );
-}
-
-
 
 /**
  * Compose the billing-rail status string. Both rails CAN be live in

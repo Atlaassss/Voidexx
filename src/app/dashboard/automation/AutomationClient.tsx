@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, Trash2, RefreshCw, X } from "lucide-react";
 import type { Venue } from "@prisma/client";
+import { toast } from "@/lib/toast";
 
 interface ConnectionRow {
   id: string;
@@ -26,8 +27,22 @@ interface AutomationClientProps {
  * list with a "Connect BingX" modal, refresh / disconnect buttons,
  * and inline error display.
  *
- * The page itself is a server component that loads the connection
- * list; this client takes over for everything that needs onClick.
+ * Demo-mode disconnect handling
+ * -----------------------------
+ *
+ * The DELETE endpoint in demo mode returns `{ ok: true, demo: true }`
+ * (200) — but the page's connection list comes from a hardcoded
+ * `DEMO_ROWS` constant in the server component, so a `router.refresh()`
+ * just renders the same row again. From the user's perspective the
+ * Disconnect click did nothing.
+ *
+ * Fix: maintain a parallel `localRows` copy here. When the API tells
+ * us `demo: true`, splice the row out optimistically AND show an amber
+ * toast explaining that the change is local-only. We skip
+ * `router.refresh()` in that case so the demo list doesn't snap back.
+ *
+ * In live mode we keep the original behaviour — splice optimistically,
+ * then refresh from the server.
  */
 export function AutomationClient({
   connections,
@@ -39,6 +54,12 @@ export function AutomationClient({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const [localRows, setLocalRows] = useState(connections);
+
+  // Sync local rows whenever the server prop changes (router.refresh() etc).
+  useEffect(() => {
+    setLocalRows(connections);
+  }, [connections]);
 
   async function refresh(id: string) {
     setBusy(id);
@@ -47,10 +68,19 @@ export function AutomationClient({
       const res = await fetch(`/api/exchange/${id}`, { method: "GET" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.reason ?? data.error ?? "refresh_failed");
-      // Soft refresh — re-renders the server component with new DB state.
-      startTransition(() => router.refresh());
+      if (data.demo) {
+        toast.demo(
+          "Refresh — demo mode",
+          "Real balance probe needs EXCHANGE_ENCRYPTION_KEY + a connected venue.",
+        );
+      } else {
+        // Soft refresh — re-renders the server component with new DB state.
+        startTransition(() => router.refresh());
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "unknown_error");
+      const msg = e instanceof Error ? e.message : "unknown_error";
+      setError(msg);
+      toast.error("Refresh failed", msg);
     } finally {
       setBusy(null);
     }
@@ -60,13 +90,29 @@ export function AutomationClient({
     if (!confirm("Revoke this exchange connection? Stored credentials will be wiped.")) return;
     setBusy(id);
     setError(null);
+    // Optimistic splice — the row goes immediately so the click feels real.
+    const prev = localRows;
+    setLocalRows((arr) => arr.filter((r) => r.id !== id));
     try {
       const res = await fetch(`/api/exchange/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "disconnect_failed");
-      startTransition(() => router.refresh());
+      if (data.demo) {
+        toast.demo(
+          "Disconnect — demo mode",
+          "The hardcoded demo row is gone from this view, but no DB row was deleted.",
+        );
+        // Don't router.refresh() — that would snap the demo row back.
+      } else {
+        toast.success("Connection disconnected", "Credentials wiped from server.");
+        startTransition(() => router.refresh());
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "unknown_error");
+      // Restore the row if the server actually rejected the delete.
+      setLocalRows(prev);
+      const msg = e instanceof Error ? e.message : "unknown_error";
+      setError(msg);
+      toast.error("Disconnect failed", msg);
     } finally {
       setBusy(null);
     }
@@ -104,9 +150,9 @@ export function AutomationClient({
         )}
       </div>
 
-      {connections.length > 0 && (
+      {localRows.length > 0 && (
         <div className="mt-6 divide-y divide-void-300/60 border border-void-300/70">
-          {connections.map((c) => (
+          {localRows.map((c) => (
             <ConnectionRow
               key={c.id}
               row={c}
@@ -217,6 +263,14 @@ function ConnectModal({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? data.error ?? "connect_failed");
+      if (data.demo) {
+        toast.demo(
+          "Connect — demo mode",
+          "Probe was simulated. Set EXCHANGE_ENCRYPTION_KEY to actually link a venue.",
+        );
+      } else {
+        toast.success("BingX connected", "Credentials encrypted and stored.");
+      }
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : "unknown_error");
