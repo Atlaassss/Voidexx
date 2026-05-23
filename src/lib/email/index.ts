@@ -24,6 +24,7 @@ export interface SendResult {
   id?: string;
   error?: string;
   demo?: boolean;
+  skipped?: "no_recipient" | "synthetic_address";
 }
 
 interface SendInput {
@@ -35,10 +36,35 @@ interface SendInput {
 }
 
 /**
+ * Recognise the synthetic placeholder we set in `ensureDbUser` when
+ * Clerk has not yet provided a real email. Sending to it would bounce
+ * 100% of the time, which would (a) hurt our Resend domain reputation
+ * and (b) generate noisy bounce-handling alerts.
+ */
+function isSyntheticAddress(addr: string): boolean {
+  return addr.endsWith("@no-email.voidexx.local");
+}
+
+/**
  * Send a transactional email. Returns success even in demo mode so
  * callers can check `.ok` without branching on env.
+ *
+ * Three short-circuits before we touch the provider:
+ *   - empty/whitespace recipient → skipped:no_recipient
+ *   - synthetic placeholder      → skipped:synthetic_address
+ *   - email subsystem disabled   → demo log + ok:true
  */
 export async function send(input: SendInput): Promise<SendResult> {
+  if (!input.to || !input.to.trim()) {
+    return { ok: true, skipped: "no_recipient" };
+  }
+  if (isSyntheticAddress(input.to)) {
+    log.info("Email send skipped (synthetic recipient)", {
+      subject: input.subject,
+    });
+    return { ok: true, skipped: "synthetic_address" };
+  }
+
   // Always log the send attempt — visible in production logs (audit trail
   // for "did we email user X about event Y") AND in dev (debug aid).
   log.info("Email send", { to: redactEmail(input.to), subject: input.subject });

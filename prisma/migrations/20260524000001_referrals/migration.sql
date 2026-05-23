@@ -3,8 +3,20 @@ ALTER TABLE "User" ADD COLUMN "referralCode" TEXT;
 CREATE UNIQUE INDEX "User_referralCode_key" ON "User"("referralCode");
 
 -- AlterTable: Referral row gains a rewardedAt timestamp and one-attribution-per-invitee constraint
--- Drop the old (fromId, toId) composite unique — it allowed re-inviting the same user
--- across cooldowns; the product policy is "one attribution ever per invitee".
+--
+-- IMPORTANT: this migration assumes the Referral table is empty when
+-- it runs. The Referral model existed in the Phase-1 schema but no
+-- code path actually inserts into it before Phase 7 — fresh deploys
+-- and existing dev databases all start with zero rows.
+--
+-- If a brownfield deploy somehow has rows where the same `toId`
+-- appears across multiple `fromId`s (impossible to insert via the old
+-- code, but possible to seed manually), the CREATE UNIQUE INDEX on
+-- `toId` below will fail. Resolution in that case: dedupe by keeping
+-- the oldest Referral per toId before re-running migrate deploy.
+
+-- Drop the old (fromId, toId) composite unique — first-touch wins now,
+-- so toId alone is the natural key.
 ALTER TABLE "Referral" DROP CONSTRAINT IF EXISTS "Referral_fromId_toId_key";
 DROP INDEX IF EXISTS "Referral_fromId_toId_key";
 

@@ -290,8 +290,9 @@ function periodEnd(sub: Stripe.Subscription): Date | null {
 }
 
 /**
- * Best-effort plan-changed email. Skips if the user has no email
- * (synthetic onboarding placeholder) or if email isn't configured.
+ * Best-effort plan-changed email. Synthetic-address filtering and
+ * provider-disabled handling both live in `lib/email`'s `send()` —
+ * this wrapper just translates the DB shape to the template input.
  */
 async function notifyPlanChanged(user: {
   email: string | null;
@@ -300,7 +301,7 @@ async function notifyPlanChanged(user: {
   plan: string;
   subscriptionStatus: string | null;
 }): Promise<void> {
-  if (!user.email || user.email.endsWith("@no-email.voidexx.local")) return;
+  if (!user.email) return;
   try {
     const { sendPlanChangedEmail } = await import("@/lib/email");
     await sendPlanChangedEmail({
