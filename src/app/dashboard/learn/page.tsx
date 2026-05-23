@@ -102,7 +102,17 @@ export default function LearnPage() {
                 Pick any candle on a chart and ask &ldquo;why did this happen?&rdquo;. The tutor
                 walks the structure with you, citing concepts from your tracks.
               </p>
-              <button className="btn-ghost mt-3">Start a session →</button>
+              <button
+                type="button"
+                disabled
+                title="Tutor sessions are wired with the live AI engine — set OPENAI_API_KEY to enable."
+                className="btn-ghost mt-3 cursor-not-allowed opacity-50"
+              >
+                Start a session →
+              </button>
+              <span className="ml-2 font-mono text-[10px] uppercase tracking-widest2 text-signal-amber">
+                Phase 8 · needs OPENAI_API_KEY
+              </span>
             </div>
           </div>
         </Panel>

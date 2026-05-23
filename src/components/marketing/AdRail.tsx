@@ -27,7 +27,12 @@ export function AdRail({ paid = false }: { paid?: boolean }) {
             <X className="h-3 w-3" />
           </button>
         </div>
-        <AdSlot title="Tradenomics" body="Real-time order-flow heatmaps. Free trial." cta="Try" />
+        <AdSlot
+          title="Tradenomics"
+          body="Real-time order-flow heatmaps. Free trial."
+          cta="Try"
+          href="https://tradenomics.example/?ref=voidexx"
+        />
       </div>
 
       <div className="pointer-events-auto cell brackets relative flex flex-col">
@@ -37,7 +42,12 @@ export function AdRail({ paid = false }: { paid?: boolean }) {
           <span>Sponsored</span>
           <span className="text-void-600">02</span>
         </div>
-        <AdSlot title="PropFlow" body="Funded accounts up to $400k. Skip evaluation." cta="Apply" />
+        <AdSlot
+          title="PropFlow"
+          body="Funded accounts up to $400k. Skip evaluation."
+          cta="Apply"
+          href="https://propflow.example/?ref=voidexx"
+        />
       </div>
 
       <div className="pointer-events-auto mt-auto border border-signal-green/40 bg-signal-green/[0.05] p-3">
@@ -59,14 +69,29 @@ export function AdRail({ paid = false }: { paid?: boolean }) {
   );
 }
 
-function AdSlot({ title, body, cta }: { title: string; body: string; cta: string }) {
+function AdSlot({
+  title,
+  body,
+  cta,
+  href,
+}: {
+  title: string;
+  body: string;
+  cta: string;
+  href: string;
+}) {
   return (
     <div className="p-3">
       <div className="font-display text-lg leading-tight tracking-wide">{title}</div>
       <p className="mt-1 text-[11px] leading-relaxed text-void-700">{body}</p>
-      <button className="mt-3 border border-signal-cyan/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest2 text-signal-cyan hover:bg-signal-cyan hover:text-void-0">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener nofollow sponsored"
+        className="mt-3 inline-block border border-signal-cyan/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest2 text-signal-cyan transition hover:bg-signal-cyan hover:text-void-0"
+      >
         {cta} →
-      </button>
+      </a>
     </div>
   );
 }

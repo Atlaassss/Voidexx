@@ -25,9 +25,9 @@ export function Footer() {
 
         <div className="mt-12 grid grid-cols-2 gap-8 border-t border-void-300/70 py-10 font-mono text-[11px] uppercase tracking-widest2 sm:grid-cols-6">
           <FCol title="Product">
-            <a href="#features">Features</a>
-            <a href="#demo">Live demo</a>
-            <a href="#pricing">Pricing</a>
+            <a href="/#features">Features</a>
+            <a href="/#demo">Live demo</a>
+            <a href="/#pricing">Pricing</a>
             <Link href="/dashboard">Dashboard</Link>
           </FCol>
           <FCol title="Modules">
@@ -39,20 +39,20 @@ export function Footer() {
           <FCol title="Resources">
             <Link href="/blog">Field notes</Link>
             <Link href="/dashboard/referrals">Referrals</Link>
-            <a href="#">Changelog</a>
-            <a href="#">Roadmap</a>
+            <Link href="/changelog">Changelog</Link>
+            <Link href="/roadmap">Roadmap</Link>
           </FCol>
           <FCol title="Company">
-            <a href="#">About</a>
-            <a href="#">Careers</a>
-            <a href="#">Press</a>
-            <a href="#">Contact</a>
+            <Link href="/about">About</Link>
+            <Link href="/careers">Careers</Link>
+            <Link href="/press">Press</Link>
+            <Link href="/contact">Contact</Link>
           </FCol>
           <FCol title="Legal">
-            <a href="#">Terms</a>
-            <a href="#">Privacy</a>
-            <a href="#">Security</a>
-            <a href="#">DPA</a>
+            <Link href="/legal/terms">Terms</Link>
+            <Link href="/legal/privacy">Privacy</Link>
+            <Link href="/legal/security">Security</Link>
+            <Link href="/legal/dpa">DPA</Link>
           </FCol>
           <FCol title="Status">
             <span className="flex items-center gap-2 text-signal-green">

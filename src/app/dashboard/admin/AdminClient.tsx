@@ -44,16 +44,29 @@ interface UserRow {
   createdAt: string;
 }
 
+type LoadState<T> =
+  | { kind: "loading" }
+  | { kind: "ok"; data: T }
+  | { kind: "error"; message: string };
+
 export function AdminClient() {
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
+  const [stats, setStats] = useState<LoadState<AdminStats>>({ kind: "loading" });
+  const [users, setUsers] = useState<LoadState<UserRow[]>>({ kind: "loading" });
+  const [auditLogs, setAuditLogs] = useState<LoadState<AuditEntry[]>>({ kind: "loading" });
   const [tab, setTab] = useState<"overview" | "users" | "audit">("overview");
 
   useEffect(() => {
-    fetch("/api/admin/stats").then((r) => r.json()).then(setStats).catch(() => {});
-    fetch("/api/admin/users?limit=10").then((r) => r.json()).then((d) => setUsers(d.users ?? [])).catch(() => {});
-    fetch("/api/admin/audit?limit=10").then((r) => r.json()).then((d) => setAuditLogs(d.logs ?? [])).catch(() => {});
+    loadJson<AdminStats>("/api/admin/stats")
+      .then((data) => setStats({ kind: "ok", data }))
+      .catch((err: Error) => setStats({ kind: "error", message: err.message }));
+
+    loadJson<{ users?: UserRow[] }>("/api/admin/users?limit=10")
+      .then((d) => setUsers({ kind: "ok", data: d.users ?? [] }))
+      .catch((err: Error) => setUsers({ kind: "error", message: err.message }));
+
+    loadJson<{ logs?: AuditEntry[] }>("/api/admin/audit?limit=10")
+      .then((d) => setAuditLogs({ kind: "ok", data: d.logs ?? [] }))
+      .catch((err: Error) => setAuditLogs({ kind: "error", message: err.message }));
   }, []);
 
   return (
@@ -74,17 +87,54 @@ export function AdminClient() {
         ))}
       </div>
 
-      {tab === "overview" && <OverviewTab stats={stats} />}
-      {tab === "users" && <UsersTab users={users} />}
-      {tab === "audit" && <AuditTab logs={auditLogs} />}
+      {tab === "overview" && <OverviewTab state={stats} />}
+      {tab === "users" && <UsersTab state={users} />}
+      {tab === "audit" && <AuditTab state={auditLogs} />}
     </div>
   );
 }
 
-function OverviewTab({ stats }: { stats: AdminStats | null }) {
-  if (!stats) {
+async function loadJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string; message?: string };
+      message = body.message ?? body.error ?? message;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as T;
+}
+
+function ErrorPanel({ message, retry }: { message: string; retry?: () => void }) {
+  return (
+    <div className="border border-signal-red/40 bg-signal-red/[0.06] p-4 font-mono text-[11px] text-signal-red">
+      <AlertTriangle className="mr-2 inline h-3 w-3" />
+      Failed to load: {message}
+      {retry && (
+        <button
+          type="button"
+          onClick={retry}
+          className="ml-3 underline hover:text-signal-amber"
+        >
+          retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+function OverviewTab({ state }: { state: LoadState<AdminStats> }) {
+  if (state.kind === "loading") {
     return <div className="font-mono text-sm text-void-700">Loading stats...</div>;
   }
+  if (state.kind === "error") {
+    return <ErrorPanel message={state.message} />;
+  }
+  const stats = state.data;
 
   const cards = [
     { label: "Total Users", value: stats.totalUsers.toLocaleString(), icon: Users, color: "text-signal-cyan" },
@@ -124,7 +174,15 @@ function OverviewTab({ stats }: { stats: AdminStats | null }) {
   );
 }
 
-function UsersTab({ users }: { users: UserRow[] }) {
+function UsersTab({ state }: { state: LoadState<UserRow[]> }) {
+  if (state.kind === "loading") {
+    return <div className="font-mono text-sm text-void-700">Loading users...</div>;
+  }
+  if (state.kind === "error") {
+    return <ErrorPanel message={state.message} />;
+  }
+  const users = state.data;
+
   if (users.length === 0) {
     return <div className="font-mono text-sm text-void-700">No users loaded.</div>;
   }
@@ -190,7 +248,15 @@ function UsersTab({ users }: { users: UserRow[] }) {
   );
 }
 
-function AuditTab({ logs }: { logs: AuditEntry[] }) {
+function AuditTab({ state }: { state: LoadState<AuditEntry[]> }) {
+  if (state.kind === "loading") {
+    return <div className="font-mono text-sm text-void-700">Loading audit log...</div>;
+  }
+  if (state.kind === "error") {
+    return <ErrorPanel message={state.message} />;
+  }
+  const logs = state.data;
+
   if (logs.length === 0) {
     return <div className="font-mono text-sm text-void-700">No audit entries.</div>;
   }

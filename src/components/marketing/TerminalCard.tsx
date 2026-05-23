@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+type TabId = "console" | "chart" | "report";
+
 const LINES = [
   { t: 200, l: "$ voidexx ingest --src tradingview.png" },
   { t: 700, l: "[ OK ] OCR pass complete · 14 candles · 1H · BTCUSDT" },
@@ -17,6 +19,7 @@ const LINES = [
 
 export function TerminalCard() {
   const [shown, setShown] = useState(0);
+  const [tab, setTab] = useState<TabId>("console");
 
   useEffect(() => {
     const timers = LINES.map((row, i) =>
@@ -46,9 +49,9 @@ export function TerminalCard() {
 
       {/* Sub-header tabs */}
       <div className="flex items-center gap-0 border-b border-void-300/80 bg-void-50/80 font-mono text-[10px] uppercase tracking-widest2">
-        <Tab active>Console</Tab>
-        <Tab>Chart</Tab>
-        <Tab>Report</Tab>
+        <Tab id="console" active={tab} setTab={setTab}>Console</Tab>
+        <Tab id="chart" active={tab} setTab={setTab}>Chart</Tab>
+        <Tab id="report" active={tab} setTab={setTab}>Report</Tab>
         <div className="ml-auto px-3 py-2 text-void-600">
           <span className="text-signal-cyan">CPU</span> 71% · <span className="text-signal-green">GPU</span> 22%
         </div>
@@ -56,30 +59,14 @@ export function TerminalCard() {
 
       {/* Body — split */}
       <div className="grid grid-cols-1 sm:grid-cols-5">
-        {/* Console output */}
+        {/* Main content swaps with tab */}
         <div className="relative h-[360px] overflow-hidden bg-void-0/80 sm:col-span-3">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-signal-cyan/40 to-transparent" />
-          <div className="absolute inset-0 animate-scan bg-gradient-to-b from-transparent via-signal-cyan/[0.04] to-transparent" />
-          <div className="relative h-full overflow-hidden p-4 font-mono text-[11px] leading-6 text-void-800">
-            {LINES.slice(0, shown).map((row, i) => (
-              <div key={i} className="animate-rise">
-                <Pretty l={row.l} />
-              </div>
-            ))}
-            {shown < LINES.length && <span className="caret text-signal-green" />}
-            {shown === LINES.length && (
-              <div className="mt-3 border border-signal-green/40 bg-signal-green/[0.06] p-3 text-signal-green animate-rise">
-                <div className="font-display text-base tracking-wide">VERDICT // 38 / 100</div>
-                <div className="mt-1 text-void-800">
-                  Liquidity-trap entry above session high. Re-enter on retrace into 4H OB after
-                  confirmation. Reduce size 4× until discipline score &gt; 70.
-                </div>
-              </div>
-            )}
-          </div>
+          {tab === "console" && <ConsolePane shown={shown} />}
+          {tab === "chart" && <ChartPane />}
+          {tab === "report" && <ReportPane />}
         </div>
 
-        {/* Side meta */}
+        {/* Side meta — same regardless of tab */}
         <aside className="border-t border-void-300/80 bg-void-50/60 p-4 font-mono text-[11px] sm:col-span-2 sm:border-l sm:border-t-0">
           <div className="text-[10px] uppercase tracking-widest2 text-void-700">Trade meta</div>
           <dl className="mt-3 space-y-2 text-void-800">
@@ -105,11 +92,205 @@ export function TerminalCard() {
   );
 }
 
-function Tab({ children, active }: { children: React.ReactNode; active?: boolean }) {
+function ConsolePane({ shown }: { shown: number }) {
+  return (
+    <>
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-signal-cyan/40 to-transparent" />
+      <div className="absolute inset-0 animate-scan bg-gradient-to-b from-transparent via-signal-cyan/[0.04] to-transparent" />
+      <div className="relative h-full overflow-hidden p-4 font-mono text-[11px] leading-6 text-void-800">
+        {LINES.slice(0, shown).map((row, i) => (
+          <div key={i} className="animate-rise">
+            <Pretty l={row.l} />
+          </div>
+        ))}
+        {shown < LINES.length && <span className="caret text-signal-green" />}
+        {shown === LINES.length && (
+          <div className="mt-3 border border-signal-green/40 bg-signal-green/[0.06] p-3 text-signal-green animate-rise">
+            <div className="font-display text-base tracking-wide">VERDICT // 38 / 100</div>
+            <div className="mt-1 text-void-800">
+              Liquidity-trap entry above session high. Re-enter on retrace into 4H OB after
+              confirmation. Reduce size 4× until discipline score &gt; 70.
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Inline SVG sparkline mocking the BTC 1H chart with sweep + reversal
+ * marked. Pure SVG — keeps the marketing bundle weightless and stays
+ * crisp at any screen density.
+ */
+function ChartPane() {
+  return (
+    <div className="relative h-full overflow-hidden p-4">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-signal-amber/40 to-transparent" />
+      <div className="font-mono text-[10px] uppercase tracking-widest2 text-signal-amber">
+        BTC / USDT · 1H · 14 bars
+      </div>
+
+      <svg
+        viewBox="0 0 600 280"
+        className="mt-4 h-[260px] w-full"
+        preserveAspectRatio="none"
+        aria-label="Demo BTC chart with liquidity sweep marked"
+      >
+        {/* Grid */}
+        <g stroke="rgb(58 58 72 / 0.25)" strokeWidth="0.5">
+          {[...Array(6)].map((_, i) => (
+            <line key={`h-${i}`} x1="0" x2="600" y1={i * 50} y2={i * 50} />
+          ))}
+          {[...Array(13)].map((_, i) => (
+            <line key={`v-${i}`} x1={i * 50} x2={i * 50} y1="0" y2="280" />
+          ))}
+        </g>
+
+        {/* Asia high — the liquidity that got swept */}
+        <g>
+          <line
+            x1="0"
+            x2="600"
+            y1="60"
+            y2="60"
+            stroke="rgb(255 176 0 / 0.6)"
+            strokeWidth="1"
+            strokeDasharray="4 4"
+          />
+          <text
+            x="8"
+            y="55"
+            fill="rgb(255 176 0)"
+            fontSize="10"
+            fontFamily="var(--font-mono)"
+          >
+            ASIA HIGH · 67,612
+          </text>
+        </g>
+
+        {/* OB zone */}
+        <rect x="0" y="170" width="600" height="22" fill="rgb(0 229 255 / 0.10)" />
+        <text x="8" y="186" fill="rgb(0 229 255)" fontSize="10" fontFamily="var(--font-mono)">
+          4H OB · 67,290 – 67,355
+        </text>
+
+        {/* Price line — sweep then reversal */}
+        <path
+          d="M 0 140 L 50 132 L 100 120 L 150 110 L 200 95 L 250 78 L 300 50 L 350 80 L 400 120 L 450 160 L 500 200 L 550 222 L 600 230"
+          fill="none"
+          stroke="rgb(0 255 157 / 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* Entry mark — short above asia high */}
+        <g>
+          <line
+            x1="305"
+            x2="320"
+            y1="50"
+            y2="50"
+            stroke="rgb(255 46 59)"
+            strokeWidth="1.5"
+          />
+          <text
+            x="325"
+            y="48"
+            fill="rgb(255 46 59)"
+            fontSize="10"
+            fontFamily="var(--font-mono)"
+          >
+            SHORT · 67,612
+          </text>
+        </g>
+
+        {/* Stop hunt arrow */}
+        <g>
+          <path
+            d="M 295 38 L 305 50 L 295 62"
+            fill="none"
+            stroke="rgb(255 46 59)"
+            strokeWidth="1"
+          />
+          <text x="220" y="32" fill="rgb(255 46 59)" fontSize="9" fontFamily="var(--font-mono)">
+            STOP HUNT
+          </text>
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function ReportPane() {
+  return (
+    <div className="relative h-full overflow-y-auto p-4 font-mono text-[11px] leading-6 text-void-800">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-signal-violet/40 to-transparent" />
+
+      <div className="font-mono text-[10px] uppercase tracking-widest2 text-signal-violet">
+        Forensic report · BTC short · 1H
+      </div>
+
+      <h3 className="mt-3 font-display text-2xl leading-tight tracking-wide text-signal-red">
+        Liquidity-trap entry above session high.
+      </h3>
+
+      <p className="mt-3">
+        You entered short at <span className="text-signal-cyan">67,612</span>{" "}
+        — the literal tick where ASIA HIGH was swept. The candle that
+        spiked to your entry was a stop-hunt, not a reversal signal: it
+        had no displacement, no FVG, and the next candle closed back
+        inside the dealing range with a wick rejection from the 4H OB.
+      </p>
+
+      <div className="mt-4 border-l-2 border-signal-amber/40 pl-3 text-signal-amber">
+        Smart money was hunting your stop. You provided it.
+      </div>
+
+      <h4 className="mt-5 font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+        What you should have done
+      </h4>
+      <ul className="mt-2 space-y-1 list-disc pl-5">
+        <li>Waited for displacement <span className="text-signal-cyan">below</span> ASIA HIGH on close.</li>
+        <li>Re-entered on retrace into the 4H OB at 67,290–67,355.</li>
+        <li>Sized for 0.5R, not 4.2R — confidence-conditioned position.</li>
+      </ul>
+
+      <h4 className="mt-5 font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+        Concept tags
+      </h4>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {["liquidity-grab", "premium-short", "fvg-ignored", "ict-asia"].map((t) => (
+          <span
+            key={t}
+            className="border border-signal-violet/40 bg-signal-violet/[0.08] px-1.5 py-0.5 text-[10px] uppercase tracking-widest2 text-signal-violet"
+          >
+            {t}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Tab({
+  children,
+  id,
+  active,
+  setTab,
+}: {
+  children: React.ReactNode;
+  id: TabId;
+  active: TabId;
+  setTab: (t: TabId) => void;
+}) {
+  const isActive = active === id;
   return (
     <button
+      type="button"
+      onClick={() => setTab(id)}
+      aria-pressed={isActive}
       className={`border-r border-void-300/80 px-4 py-2 transition ${
-        active
+        isActive
           ? "bg-void-200 text-void-900"
           : "text-void-700 hover:text-signal-cyan"
       }`}
