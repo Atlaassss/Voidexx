@@ -59,6 +59,7 @@ export function UploadClient() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<AutopsyResponse | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dragActive = useRef(false);
   const [drag, setDrag] = useState(false);
@@ -79,7 +80,7 @@ export function UploadClient() {
     setFile({ name: f.name, size: f.size, type: f.type, url, raw: f });
   }
 
-  // Run the pipeline whenever a fresh file is set.
+  // Run the pipeline whenever a fresh file is set or retry is triggered.
   useEffect(() => {
     if (!file) return;
     let cancelled = false;
@@ -144,7 +145,8 @@ export function UploadClient() {
       cancelled = true;
       ac.abort();
     };
-  }, [file]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, retryKey]);
 
   function reset() {
     if (file?.url) URL.revokeObjectURL(file.url);
@@ -153,6 +155,19 @@ export function UploadClient() {
     setProgress(0);
     setError(null);
     setReport(null);
+  }
+
+  /**
+   * Retry the autopsy pipeline with the same screenshot. Resets error
+   * state and re-triggers the pipeline effect via retryKey increment.
+   * The file stays — no re-upload needed.
+   */
+  function retry() {
+    setPhase("presigning");
+    setProgress(0);
+    setError(null);
+    setReport(null);
+    setRetryKey((k) => k + 1);
   }
 
   const phaseIndex = PHASES.findIndex((p) => p.id === phase);
@@ -275,6 +290,15 @@ export function UploadClient() {
                     Error
                   </div>
                   <p className="mt-1 text-sm text-void-800">{error}</p>
+                  {file && (
+                    <button
+                      onClick={retry}
+                      className="mt-2 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest2 text-signal-cyan hover:text-signal-green transition-colors"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Retry with same screenshot
+                    </button>
+                  )}
                 </div>
               )}
             </Panel>
@@ -401,9 +425,15 @@ export function UploadClient() {
                     <p className="mt-2 max-w-md text-sm text-void-700">
                       {error ?? "Unknown error"}
                     </p>
-                    <button onClick={reset} className="btn-ghost mt-4">
-                      Retry
-                    </button>
+                    <div className="mt-4 flex gap-3">
+                      <button onClick={retry} className="btn-primary">
+                        <RotateCcw className="h-3 w-3" />
+                        Retry autopsy
+                      </button>
+                      <button onClick={reset} className="btn-ghost">
+                        New screenshot
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>

@@ -377,3 +377,41 @@ model AdPreference {
   showAds   Boolean @default(true)
   topics    String[]
 }
+
+// =====================================================
+// Admin + Audit
+// =====================================================
+
+model AdminAuditLog {
+  id          String   @id @default(cuid())
+  actorId     String
+  action      String   // e.g. "user.plan_changed", "user.banned", "credit.granted"
+  targetType  String?  // e.g. "User", "Payment"
+  targetId    String?
+  meta        Json?    // arbitrary context (old/new values, reason, etc.)
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@index([action])
+}
+
+// =====================================================
+// Webhook Idempotency
+// =====================================================
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String   // "stripe", "paypal", "bingx"
+  eventId     String   // provider's event/delivery id
+  eventType   String   // e.g. "checkout.session.completed"
+  status      String   @default("processing") // processing | done | failed
+  payload     Json?    // raw event body (stored for replay/debug)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, createdAt])
+}

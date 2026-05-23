@@ -9,6 +9,7 @@ const PROTECTED = createRouteMatcher([
   "/api/trades(.*)",
   "/api/billing/checkout(.*)",
   "/api/exchange(.*)",
+  "/api/admin(.*)",
 ]);
 
 const CLERK_ENABLED = Boolean(
