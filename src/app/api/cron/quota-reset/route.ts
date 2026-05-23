@@ -26,13 +26,28 @@ export const dynamic = "force-dynamic";
  * just re-zeroes counters for users whose period is already current.
  */
 export async function GET(req: Request) {
-  // Verify cron secret in production
+  // Auth: in production, CRON_SECRET MUST be set AND match.
+  // We fail closed: if the secret is missing in production, we refuse
+  // rather than allowing an unauthenticated call to wipe quotas for
+  // every RECON user. Vercel sets the bearer token automatically.
+  //
+  // In dev, callers can omit the header so a developer can `curl`
+  // the endpoint to test it without setting up the env var.
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && process.env.NODE_ENV === "production") {
-    const authHeader = req.headers.get("authorization");
-    if (authHeader !== `Bearer ${cronSecret}`) {
+  const authHeader = req.headers.get("authorization");
+  const expected = cronSecret ? `Bearer ${cronSecret}` : null;
+
+  if (process.env.NODE_ENV === "production") {
+    if (!cronSecret) {
+      console.error("[cron/quota-reset] CRON_SECRET not configured; refusing.");
+      return new Response("Cron secret not configured", { status: 503 });
+    }
+    if (authHeader !== expected) {
       return new Response("Unauthorized", { status: 401 });
     }
+  } else if (cronSecret && authHeader && authHeader !== expected) {
+    // Dev with secret set: validate when the caller bothers to send it.
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const db = tryGetDb();

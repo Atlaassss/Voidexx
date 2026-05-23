@@ -9,16 +9,20 @@
 
 import { requireUser, type SessionUser } from "./auth";
 import { tryGetDb } from "./db";
-import { env } from "./env";
+import { toJsonValue } from "./utils";
 
 export interface AdminUser extends SessionUser {
   role: "ADMIN";
 }
 
 /**
- * Throws 401 if unauthenticated, 403 if not ADMIN.
- * In demo mode: returns the demo user with an admin "hat" so the UI
- * is fully explorable without config.
+ * Throws 401 if unauthenticated, 403 if not ADMIN, 503 if DB unavailable
+ * but Clerk is configured (we can't verify the role, so we refuse).
+ *
+ * In demo mode (Clerk not configured): returns the demo user with an
+ * admin "hat" so the UI is fully explorable without config. This is
+ * safe because demo mode never persists writes — the admin panel can
+ * be browsed but not used to mutate real data.
  */
 export async function requireAdmin(): Promise<AdminUser> {
   const user = await requireUser();
@@ -30,8 +34,18 @@ export async function requireAdmin(): Promise<AdminUser> {
 
   const db = tryGetDb();
   if (!db) {
-    // No DB but not demo? Shouldn't happen — but fail open for local dev.
-    return { ...user, role: "ADMIN" as const };
+    // Clerk-authenticated but no DB. We can't verify the role, so we
+    // refuse rather than fail open. A misconfigured production deploy
+    // (DATABASE_URL accidentally cleared) must NOT grant admin access
+    // to every signed-in user.
+    throw new Response(
+      JSON.stringify({
+        error: "admin_unavailable",
+        message:
+          "Admin panel requires a configured database to verify role.",
+      }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    );
   }
 
   const row = await db.user.findUnique({
@@ -72,7 +86,7 @@ export async function auditLog(opts: {
         action: opts.action,
         targetType: opts.targetType ?? null,
         targetId: opts.targetId ?? null,
-        meta: opts.meta ? JSON.parse(JSON.stringify(opts.meta)) : undefined,
+        meta: opts.meta ? toJsonValue(opts.meta) : undefined,
         ip: opts.ip ?? null,
         userAgent: opts.userAgent ?? null,
       },

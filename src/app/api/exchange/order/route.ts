@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { requireUser, asResponse, ensureDbUser } from "@/lib/auth";
 import { tryGetDb } from "@/lib/db";
 import { isLockedOut, describeBlock, DEFAULT_RISK_CAPS } from "@/lib/exchange/risk";
-import { validateConsentToken, type OrderRequest, type OrderResult } from "@/lib/exchange/order";
+import { validateConsentToken, type OrderResult } from "@/lib/exchange/order";
 import { auditLog, getRequestIp } from "@/lib/admin";
+import { toJsonValue } from "@/lib/utils";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -103,34 +104,51 @@ export async function POST(req: Request) {
     );
   }
 
-  // 2FA consent gate for live mode
+  // 2FA consent gate for live mode.
+  //
+  // Live trading is gated behind 2FA — full stop. If the user hasn't
+  // enabled 2FA yet, we refuse the order rather than letting it
+  // through unconfirmed. This forces 2FA enrolment before any real
+  // money moves and prevents an account-takeover from immediately
+  // draining funds via the API.
+  //
+  // Paper mode skips this gate (no real funds at risk).
   if (!connection.paperMode) {
     const dbUser = await db.user.findUnique({
       where: { id: user.id },
       select: { twoFactorOn: true },
     });
 
-    if (dbUser?.twoFactorOn) {
-      if (!parsed.data.consentToken) {
-        return NextResponse.json(
-          {
-            error: "2fa_required",
-            message: "Live order requires 2FA consent. Call POST /api/exchange/consent first.",
-          },
-          { status: 403 },
-        );
-      }
+    if (!dbUser?.twoFactorOn) {
+      return NextResponse.json(
+        {
+          error: "2fa_setup_required",
+          message:
+            "Live trading requires 2FA. Enable it in Settings before placing live orders.",
+        },
+        { status: 403 },
+      );
+    }
 
-      const valid = validateConsentToken(user.id, parsed.data.consentToken);
-      if (!valid) {
-        return NextResponse.json(
-          {
-            error: "consent_invalid",
-            message: "Consent token is invalid or expired. Re-verify 2FA.",
-          },
-          { status: 403 },
-        );
-      }
+    if (!parsed.data.consentToken) {
+      return NextResponse.json(
+        {
+          error: "2fa_required",
+          message: "Live order requires 2FA consent. Call POST /api/exchange/consent first.",
+        },
+        { status: 403 },
+      );
+    }
+
+    const valid = validateConsentToken(user.id, parsed.data.consentToken);
+    if (!valid) {
+      return NextResponse.json(
+        {
+          error: "consent_invalid",
+          message: "Consent token is invalid or expired. Re-verify 2FA.",
+        },
+        { status: 403 },
+      );
     }
   }
 
@@ -162,7 +180,7 @@ export async function POST(req: Request) {
         kind: "ORDER_PLACED",
         level: "INFO",
         message: `Paper ${parsed.data.side} ${parsed.data.quantity} ${parsed.data.symbol} @ ${parsed.data.type}`,
-        payload: JSON.parse(JSON.stringify({ order: parsed.data, result })),
+        payload: toJsonValue({ order: parsed.data, result }),
       },
     });
 
@@ -191,7 +209,7 @@ export async function POST(req: Request) {
       kind: "ORDER_PLACED",
       level: "INFO",
       message: `Live ${parsed.data.side} ${parsed.data.quantity} ${parsed.data.symbol} @ ${parsed.data.type}`,
-      payload: JSON.parse(JSON.stringify({ order: parsed.data, result })),
+      payload: toJsonValue({ order: parsed.data, result }),
     },
   });
 

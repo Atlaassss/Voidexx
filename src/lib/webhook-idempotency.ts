@@ -11,6 +11,7 @@
  */
 
 import { tryGetDb } from "./db";
+import { toJsonValue } from "./utils";
 
 export type IdempotencyResult =
   | { duplicate: false; markDone: () => Promise<void>; markFailed: (reason?: string) => Promise<void> }
@@ -46,7 +47,7 @@ export async function claimWebhookEvent(
         eventId,
         eventType,
         status: "processing",
-        payload: payload != null ? (payload as object) : undefined,
+        payload: payload != null ? toJsonValue(payload) : undefined,
       },
     });
 
@@ -66,8 +67,19 @@ export async function claimWebhookEvent(
           data: {
             status: "failed",
             processedAt: new Date(),
-            // Store failure reason in payload if no original payload
-            ...(reason && !payload ? { payload: { _failReason: reason } } : {}),
+            // Always record the failure reason if we have one.
+            // We append rather than overwrite the original payload so
+            // both are inspectable later. Prior behaviour was to only
+            // store the reason if there was no payload, which lost
+            // the failure cause for handlers that DO pass a payload.
+            ...(reason
+              ? {
+                  payload: toJsonValue({
+                    original: payload ?? null,
+                    failReason: reason,
+                  }),
+                }
+              : {}),
           },
         }).catch((err) => {
           console.error("[webhook-idempotency] markFailed failed", err);
