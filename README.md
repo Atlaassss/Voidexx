@@ -27,8 +27,9 @@ for AI, payments, exchange wiring and admin to plug into.
 | Auth (Clerk) | ✅ | Middleware-protected dashboard + API, themed `/sign-in` & `/sign-up`, `<UserButton />` in topbar |
 | Demo mode | ✅ | App boots without ANY env vars; banner declares which subsystems are unwired |
 | Storage (S3 / R2) | ✅ | Presigned PUT issued by `/api/uploads`; works with AWS S3 or Cloudflare R2 endpoint |
-| API surface | ✅ | `/api/uploads`, `/api/autopsy` real (auth + zod + quota + DB persistence); billing/exchange/trades stubbed |
-| Real AI vision pipeline | ⏳ | Worker design notes below — Phase 3 |
+| AI engine v1 | ✅ | gpt-4o vision + verdict passes, deterministic scorer, NDJSON streaming, 4 archetype mocks |
+| API surface | ✅ | `/api/uploads`, `/api/autopsy` real (auth + zod + quota + DB persistence + streaming); `/api/autopsy/[id]` reads persisted reports |
+| Real AI vision pipeline | ✅ | Streams progress over NDJSON; cost-tracked in `Autopsy.costMicros` |
 | Exchange integrations | ⏳ | BingX first; wiring scaffold in `api/exchange/*` — Phase 5 |
 | Stripe / PayPal / GCash / Maya | ⏳ | Webhook + checkout stubs in place — Phase 4 |
 | Admin panel | ⏳ | Schema-ready, route group `(admin)` not yet built — Phase 6 |
@@ -96,8 +97,9 @@ relevant block:
 | Subsystem | Required env | What activates |
 | ---- | ---- | ---- |
 | Clerk auth | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | `/sign-in` & `/sign-up` mount real Clerk UI; middleware enforces session on `/dashboard` and protected APIs; `<UserButton />` replaces demo chip |
-| Database | `DATABASE_URL` (Postgres / Supabase) | `/api/autopsy` persists `Trade` + `Autopsy` rows; quota counter ticks on `User.freeUsageMonth` |
-| Storage | `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (+ optional `S3_ENDPOINT` for R2) | Upload page hits real presigned PUT URLs; uploads stream directly browser → S3 with progress |
+| Database | `DATABASE_URL` (Postgres / Supabase) | `/api/autopsy` persists `Trade` + `Autopsy` rows; quota counter ticks on `User.freeUsageMonth`; `/api/autopsy/[id]` reads them back |
+| Storage | `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (+ optional `S3_ENDPOINT` for R2) | Upload page hits real presigned PUT URLs; uploads stream directly browser → S3 with progress; orchestrator fetches the bytes for the vision pass |
+| AI | `OPENAI_API_KEY` | Vision + verdict passes hit `gpt-4o`; `Autopsy.costMicros` tracks per-trade USD cost; without it, the orchestrator returns one of 4 self-coherent demo archetypes keyed off `uploadId` hash |
 
 Type-check:
 
@@ -181,33 +183,56 @@ prisma/
 
 ---
 
-## AI pipeline design (planned)
+## AI pipeline (Phase 3 — shipped)
 
 ```
-[ Client ] -- presigned PUT --> [ S3/R2 ]
+[ Client ] -- presigned PUT --> [ S3 / R2 ]
 [ Client ] -- POST /api/autopsy { uploadId } --> [ web ]
-[ web ] enqueues job --> [ Redis (BullMQ) ]
-                              |
-                  ┌-----------┴-----------┐
-                  v                       v
-       [ Vision worker (TS) ]    [ Structure worker (Py) ]
-       OpenAI vision API         pandas-ta + custom ICT/SMC rules
-                  └---------┬-----------┘
-                            v
-              [ Aggregator + Verdict (TS) ]
-              merges JSON + writes summary
-              persists Trade + Autopsy
-                            v
-                 [ web ] streams result
+                                                    |
+                                       runAutopsy() orchestrator
+                                                    |
+   ┌────────────────┬────────────────┬─────────────┬──────────────┐
+   v                v                v             v              v
+ fetch          vision           verdict        score         persist
+ (S3 GET)    (gpt-4o + img)   (gpt-4o text)  (rule-based)   (Prisma)
+   |                |                |             |              |
+   └────────────────┴───►  emit() ───┴─────────────┴──────────────┘
+                                  │
+                                  v
+                   NDJSON stream → client (1 line per phase)
 ```
 
-Cost guard: every Autopsy row stores `costMicros`. Free tier hard-caps at 5/month
-via `User.freeUsageMonth`; reset by a daily cron.
+- **Streaming**: `/api/autopsy` returns `application/x-ndjson` — one
+  ProgressEvent per line. The client consumes it with a `ReadableStream`
+  reader. SSE wasn't usable here because EventSource doesn't support
+  POST bodies in browsers.
+- **Cancellation**: client `AbortController` propagates through `req.signal`
+  to the OpenAI SDK. Closing the tab during a vision pass cancels the
+  upstream call so we don't burn tokens on abandoned uploads.
+- **Cost guard**: every Autopsy row stamps `costMicros` (1/1,000,000 USD)
+  computed from `usage.prompt_tokens` + `usage.completion_tokens` × the
+  current gpt-4o pricing. Free tier hard-caps at 5 autopsies/month via
+  `User.freeUsageMonth` (reset by daily cron — wire in Phase 6 admin).
+- **Scoring is deterministic**: the model never produces the 0–100 score.
+  `lib/ai/scoring.ts` applies transparent rules over the parsed structure
+  + flags (confluence bonuses, R:R bonuses, liquidity-proximity penalties,
+  per-flag weighted deltas, low-confidence damping). This keeps the
+  metric stable and auditable across prompt drift.
+- **Mock fallback with archetype variance**: without `OPENAI_API_KEY`,
+  the orchestrator picks one of 4 hand-crafted archetypes
+  (clean OB long, liquidity-trap short, FOMO chase, patient sniper)
+  by `hash(uploadId) % 4`. Each archetype is internally coherent —
+  the structure, verdict, flags, and concept tags all match the same
+  story. Demos see the full score range (0..92) instead of a single
+  canned response.
 
-Vision prompt principles:
-- Output strict JSON, never prose
-- Extract: candles[], range hi/lo, BOS/CHOCH lines, OBs, FVGs, sweeps, equal-h/l
-- One call → structure pass; second call → narrative pass over the JSON
+### Vision pass prompt principles
+
+- Strict JSON output, never prose, no markdown fences.
+- Extract: candles count, range hi/lo, BOS/CHOCH lines, OBs, FVGs, sweeps, equal-highs/lows, trade marks (entry/stop/target).
+- One call per autopsy → structure pass; one call → narrative pass over the structure JSON.
+- `temperature: 0.2` for vision (factual reading), `0.4` for verdict (narrative).
+- `max_tokens` capped at 800 / 700 to bound worst-case cost (~$0.005 per autopsy).
 
 ---
 
@@ -236,8 +261,14 @@ Vision prompt principles:
 - Auth-gated, zod-validated, quota-enforced `/api/autopsy` with optional Prisma persistence.
 - Initial migration SQL ready for `prisma migrate deploy` on Supabase.
 
-**Phase 3 — AI engine v1**
-- Vision worker, structure worker, aggregator, persistence, real cost tracking. Replace the deterministic verdict body in `/api/autopsy` with the real pipeline.
+**Phase 3 — AI engine v1** ✅ shipped (this PR)
+- Two-pass pipeline: gpt-4o vision (structure JSON) → gpt-4o text (verdict narrative).
+- Deterministic 0–100 scorer in `lib/ai/scoring.ts` — transparent rules, not asked of the model.
+- NDJSON streaming endpoint with phase events (fetch → vision → verdict → score → persist), client-side reader, abort-aware.
+- S3 GetObject → base64 data URL handoff to the vision API (works for private buckets).
+- Token-counted cost stamping on every `Autopsy.costMicros`.
+- Mock fallback with 4 self-coherent archetypes (BTC trap, EUR clean, SOL FOMO, XAU sniper) keyed off uploadId hash for diverse demos.
+- Real `GET /api/autopsy/[id]` returning persisted reports.
 
 **Phase 4 — Billing live**
 - Stripe Checkout, webhook → plan upgrade, GCash & Maya via Xendit, refund flow.

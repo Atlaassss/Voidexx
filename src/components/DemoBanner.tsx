@@ -10,6 +10,7 @@ export function DemoBanner() {
   if (!env.clerk.enabled) missing.push("auth");
   if (!env.db.enabled) missing.push("db");
   if (!env.s3.enabled) missing.push("uploads");
+  if (!env.openai.enabled) missing.push("ai");
 
   if (missing.length === 0) return null;
 
