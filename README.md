@@ -32,9 +32,13 @@ for AI, payments, exchange wiring and admin to plug into.
 | Real AI vision pipeline | ✅ | Streams progress over NDJSON; cost-tracked in `Autopsy.costMicros` |
 | Stripe billing | ✅ | Real Checkout, webhook → plan upgrade, customer portal, cost-tracked Payment rows; demo-mode shows `Stripe · demo` chip |
 | Exchange wiring | ✅ | BingX read-only API connect/probe/refresh; AES-256-GCM credential vault; risk engine primitives; automation dashboard wired to live balance |
-| GCash / Maya / PayPal | ⏳ | Stripe handles the global market; PH-specific rails via Xendit — Phase 6 |
-| Live order placement | ⏳ | Read-only in v1; admin-gated `placeOrder` lands in Phase 6 |
-| Admin panel | ⏳ | Schema-ready, route group `(admin)` not yet built — Phase 6 |
+| GCash / Maya / PayPal | ⏳ | Stripe handles the global market; PH-specific rails via Xendit — Phase 7 |
+| Live order placement | ✅ | 2FA consent gate, risk engine check, paper/live split, audit-logged |
+| Admin panel | ✅ | Role-gated route group, user management, audit log, AI cost dashboard |
+| Webhook idempotency | ✅ | `WebhookEvent` table, claim-before-process pattern on Stripe webhook |
+| Vercel Cron (quota reset) | ✅ | Monthly RECON quota bulk reset via `/api/cron/quota-reset` |
+| Structured logging | ✅ | JSON-line prod logger, service-scoped, level-gated |
+| Autopsy retry UX | ✅ | Retry button on pipeline failure, re-runs without re-upload |
 
 `✅` shipped · `🟡` partial · `⏳` planned
 
