@@ -33,6 +33,16 @@ model User {
   plan            Plan         @default(RECON)
   planRenewsAt    DateTime?
   freeUsageMonth  Int          @default(0)
+  // First-of-month timestamp the freeUsageMonth counter belongs to.
+  // Lazy-reset: when checkAndIncrementQuota notices the current month
+  // is past this date, it zeroes the counter atomically. Avoids needing
+  // a cron — every quota check that crosses a month boundary self-heals.
+  freeUsagePeriodStart DateTime @default(now())
+
+  // Stripe identity (Phase 4 billing)
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  subscriptionStatus   String? // active, past_due, canceled, incomplete, trialing
 
   // Refs
   trades          Trade[]
@@ -241,6 +251,11 @@ model ExchangeConnection {
   paperMode   Boolean  @default(true)
   enabled     Boolean  @default(true)
   lastCheck   DateTime?
+  // Cache for the dashboard. Refreshed when /api/exchange/[id] is hit;
+  // also populated on initial connect probe.
+  lastBalanceCents BigInt?
+  lastBalanceAt    DateTime?
+  lastError        String?
   createdAt   DateTime @default(now())
 
   logs        AutomationLog[]

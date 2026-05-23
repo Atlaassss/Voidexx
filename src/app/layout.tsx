@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Anton, Geist, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import { env } from "@/lib/env";
+import { DemoBanner } from "@/components/DemoBanner";
 
 const display = Anton({
   weight: "400",
@@ -59,12 +61,28 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+const fontVars = `${display.variable} ${body.variable} ${mono.variable} ${serif.variable}`;
+const bodyClass = `${fontVars} font-body bg-void-0 text-void-900 antialiased selection:bg-signal-green/30 selection:text-signal-green`;
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Conditionally mount ClerkProvider so the app boots without env keys.
+  if (env.clerk.enabled) {
+    const { ClerkProvider } = await import("@clerk/nextjs");
+    return (
+      <ClerkProvider>
+        <html lang="en" className="dark">
+          <body className={bodyClass}>
+            <DemoBanner />
+            {children}
+          </body>
+        </html>
+      </ClerkProvider>
+    );
+  }
   return (
     <html lang="en" className="dark">
-      <body
-        className={`${display.variable} ${body.variable} ${mono.variable} ${serif.variable} font-body bg-void-0 text-void-900 antialiased selection:bg-signal-green/30 selection:text-signal-green`}
-      >
+      <body className={bodyClass}>
+        <DemoBanner />
         {children}
       </body>
     </html>
