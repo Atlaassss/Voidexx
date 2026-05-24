@@ -66,6 +66,33 @@ const ARCHETYPES: Archetype[] = [
         flag("trap_fill", "Trap fill", "violet", 0.88),
       ],
       concepts: ["liquidity-grab", "asia-high", "bos", "choch", "order-block", "fvg", "premium-discount", "stop-hunt"],
+      next_actions: [
+        {
+          label: "Wait for a 1H CHOCH below 67,500 before re-entering short.",
+          rationale: "Confirms the sweep was rejection, not continuation.",
+          tone: "green",
+        },
+        {
+          label: "Set sell-limit at the 4H OB top (67,355) with stop at 67,640.",
+          rationale: "Trades from the OB instead of chasing into liquidity.",
+          tone: "green",
+        },
+        {
+          label: "Lock 30-min cool-down after any stop-out for the next 14 days.",
+          rationale: "Three of the last four losses came from sub-30min revenge entries.",
+          tone: "red",
+        },
+        {
+          label: "Cut size to 0.25R until the discipline score crosses 70.",
+          rationale: "Capital preservation during the recovery period.",
+          tone: "amber",
+        },
+        {
+          label: "Tag this autopsy in your journal under \"liquidity-grab-trap\".",
+          rationale: "Rebuilds pattern recognition for the next ASIA-high setup.",
+          tone: "violet",
+        },
+      ],
     },
   },
 
@@ -104,6 +131,28 @@ const ARCHETYPES: Archetype[] = [
         flag("confluence", "OB + FVG confluence", "cyan", 0.78),
       ],
       concepts: ["london-open", "stop-hunt", "choch", "bos", "order-block", "fvg", "buy-side-draw"],
+      next_actions: [
+        {
+          label: "Codify this as Setup A+ in the playbook with full criteria.",
+          rationale: "Five-bar checklist: London → sweep → CHOCH → OB tap → BOS confirm.",
+          tone: "green",
+        },
+        {
+          label: "Size up to 1.5x baseline only when ALL five criteria are present.",
+          rationale: "Reward the highest-confluence pattern; don't dilute it with lookalikes.",
+          tone: "green",
+        },
+        {
+          label: "Set price alerts at next London session lows for early heads-up.",
+          rationale: "First touch of opposite session low is your trigger window.",
+          tone: "cyan",
+        },
+        {
+          label: "Skip same setup on 5M timeframe — chop noise has 31% lower hit rate.",
+          rationale: "Backtest shows 5M instances mean-revert before BOS.",
+          tone: "amber",
+        },
+      ],
     },
   },
 
@@ -142,6 +191,33 @@ const ARCHETYPES: Archetype[] = [
         flag("trap_fill", "Inducement trap", "violet", 0.76),
       ],
       concepts: ["liquidity-grab", "inducement", "equal-highs", "fvg", "stop-hunt", "buy-side-draw"],
+      next_actions: [
+        {
+          label: "Lock 15-minute cool-down after any +3% intraday candle.",
+          rationale: "Removes the market-buy reflex when momentum spikes.",
+          tone: "red",
+        },
+        {
+          label: "Wait for the 168.40 high to sweep AND a 5M CHOCH before re-entry.",
+          rationale: "Confirms the inducement was bait, not continuation.",
+          tone: "green",
+        },
+        {
+          label: "Set buy-limit inside the unfilled FVG (162.40-164.10) with stop at 162.10.",
+          rationale: "Trades the mitigation, not the breakout.",
+          tone: "green",
+        },
+        {
+          label: "Equal highs = liquidity. Treat them as targets, never as breakout entries.",
+          rationale: "Pattern repeats every NY session on SOL.",
+          tone: "amber",
+        },
+        {
+          label: "Half-size for the next 3 trades and journal the entry trigger.",
+          rationale: "Re-establishes discipline after a FOMO loss.",
+          tone: "amber",
+        },
+      ],
     },
   },
 
@@ -180,6 +256,28 @@ const ARCHETYPES: Archetype[] = [
         flag("size_appropriate", "Size appropriate", "green", 0.86),
       ],
       concepts: ["liquidity-grab", "ny-overlap", "choch", "order-block", "fvg", "premium-discount", "sell-side-draw", "equal-lows"],
+      next_actions: [
+        {
+          label: "Tag this as Setup A+ — weekly raid + 4H OB + 1H CHOCH + sell-draw.",
+          rationale: "Highest-conviction pattern of the quarter — playbook entry.",
+          tone: "green",
+        },
+        {
+          label: "Take EVERY future instance at full size, no exceptions.",
+          rationale: "Cherry-picking high-conviction setups erodes long-run edge.",
+          tone: "green",
+        },
+        {
+          label: "Set alerts at next weekly high + sell-side draw on XAU/EUR/GBP.",
+          rationale: "Pattern is currency-agnostic; broaden the watchlist.",
+          tone: "cyan",
+        },
+        {
+          label: "Skip lower-confluence shorts on XAU for the rest of the week.",
+          rationale: "Reset execution memory around the A+ pattern.",
+          tone: "violet",
+        },
+      ],
     },
   },
 ];

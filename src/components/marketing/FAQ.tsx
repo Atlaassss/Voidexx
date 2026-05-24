@@ -22,7 +22,7 @@ const QA = [
   },
   {
     q: "Will VOIDEXX trade for me?",
-    a: "Optionally — only if you connect an exchange and explicitly enable automation. By default it's read-only.",
+    a: "No. VOIDEXX is intentionally not an auto-trading bot. The engine reads your charts, scores your discipline, and writes the post-mortem — you stay in the chair for every entry.",
   },
   {
     q: "Do I need to know SMC / ICT to use it?",

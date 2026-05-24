@@ -6,6 +6,7 @@ import { tryGetDb } from "@/lib/db";
 import { env } from "@/lib/env";
 import { PLANS } from "@/lib/billing/plans";
 import { BillingClient } from "./BillingClient";
+import { PaymongoSetupGuide } from "./PaymongoSetupGuide";
 import type { Plan } from "@prisma/client";
 
 const FREE_MONTHLY = 5;
@@ -105,7 +106,7 @@ export default async function BillingPage() {
               </div>
               <div className="mt-2 font-display text-4xl tracking-wide">{planDef.name}</div>
               <div className="mt-1 font-mono text-[11px] text-void-700">
-                {isFree ? "Free · forever" : `$${planDef.priceUsd} / month`}
+                {isFree ? "Free · forever" : `$${planDef.priceUsd.toFixed(2)} / month`}
               </div>
               {view.subscriptionStatus && view.subscriptionStatus !== "active" && (
                 <div className="mt-3 chip border-signal-amber/40 text-signal-amber">
@@ -178,6 +179,20 @@ export default async function BillingPage() {
               paymongoEnabled={env.paymongo.enabled}
             />
           </div>
+
+          {/* PayMongo activation panel — only shown when the rail isn't
+              fully wired. Renders the full 7-step guide when no key is
+              set; renders the focused webhook step when only the
+              webhook secret is missing. Hidden once both env vars are
+              present so live operators don't get clutter. */}
+          {!env.paymongo.webhookEnabled && (
+            <div className="mt-6">
+              <PaymongoSetupGuide
+                appUrl={env.app.url}
+                partial={env.paymongo.enabled && !env.paymongo.webhookEnabled}
+              />
+            </div>
+          )}
         </Panel>
 
         <Panel title="History" meta={`${view.history.length} entries`}>
@@ -215,20 +230,35 @@ export default async function BillingPage() {
   );
 }
 
-function PlanCard({ plan, highlight }: { plan: Plan; highlight: boolean }) {  const def = PLANS[plan];
+function PlanCard({ plan, highlight }: { plan: Plan; highlight: boolean }) {
+  const def = PLANS[plan];
   const checkColor = highlight ? "text-signal-green" : "text-signal-cyan";
+  const savings =
+    def.originalPriceUsd && def.originalPriceUsd > def.priceUsd
+      ? Math.floor(((def.originalPriceUsd - def.priceUsd) / def.originalPriceUsd) * 100)
+      : 0;
   return (
     <div className="bg-void-50/60 p-6">
       <div className="font-mono text-[10px] uppercase tracking-widest2 text-void-700">
         {def.name} {highlight ? "· most picked" : "· teams + prop"}
       </div>
-      <div className="mt-2 flex items-baseline gap-1">
+      {def.originalPriceUsd && savings > 0 && (
+        <div className="mt-2 flex items-baseline gap-2 font-mono text-[11px] text-void-700">
+          <span className="line-through decoration-signal-red/70 decoration-[2px]">
+            ${def.originalPriceUsd}
+          </span>
+          <span className="chip border-signal-red/40 bg-signal-red/[0.08] text-signal-red">
+            −{savings}%
+          </span>
+        </div>
+      )}
+      <div className="mt-1 flex items-baseline gap-1">
         <span
           className={`font-display text-6xl tracking-wide ${
             highlight ? "text-signal-green" : "text-void-900"
           }`}
         >
-          ${def.priceUsd}
+          ${def.priceUsd.toFixed(2)}
         </span>
         <span className="font-mono text-[11px] text-void-700">/ month</span>
       </div>

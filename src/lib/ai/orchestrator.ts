@@ -14,7 +14,7 @@
 import { resolveUploadToDataUrl } from "./imageFetch";
 import { runVisionPass } from "./vision";
 import { runVerdictPass } from "./verdict";
-import { scoreAutopsy } from "./scoring";
+import { scoreAutopsy, deriveWinProbability, deriveRiskLevel, deriveNextActions } from "./scoring";
 import type {
   CostBreakdown,
   PipelinePhase,
@@ -108,6 +108,13 @@ export async function runAutopsy(input: OrchestratorInput, emit: Emit): Promise<
       score = scoreAutopsy(structure!, verdict!);
     });
 
+    // Derived signals — deterministic over (structure, verdict, score).
+    // Computed alongside scoring so a single phase covers both the
+    // primary metric and the auxiliary read-outs.
+    const winProbability = deriveWinProbability(structure!, verdict!, score);
+    const riskLevel = deriveRiskLevel(structure!, verdict!, score);
+    const nextActions = deriveNextActions(structure!, verdict!, riskLevel);
+
     const cost: CostBreakdown = {
       microUsd: visionMicroUsd + verdictMicroUsd,
       modelVision: visionModel,
@@ -125,6 +132,9 @@ export async function runAutopsy(input: OrchestratorInput, emit: Emit): Promise<
       id: autopsyId,
       tradeId,
       score,
+      winProbability,
+      riskLevel,
+      nextActions,
       verdict: verdict!.verdict,
       summary: verdict!.summary,
       improvement: verdict!.improvement,

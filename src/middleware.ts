@@ -8,7 +8,6 @@ const PROTECTED = createRouteMatcher([
   "/api/uploads(.*)",
   "/api/trades(.*)",
   "/api/billing/checkout(.*)",
-  "/api/exchange(.*)",
   "/api/admin(.*)",
 ]);
 

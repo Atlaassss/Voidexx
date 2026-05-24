@@ -9,6 +9,11 @@
  * publish a flat conversion (USD × 56) so ops don't have to maintain
  * two source-of-truth lists; if the FX rate drifts more than a few
  * percent, override via PAYMONGO_PRICE_*_PHP env vars.
+ *
+ * Phase 9 introduces a launch-discount pricing layout: paid tiers
+ * advertise the strikethrough `originalPriceUsd` alongside the live
+ * price so the marketing surface and billing dashboard render the
+ * same "price was $X, now $Y" treatment without data drift.
  */
 
 import { env } from "../env";
@@ -18,10 +23,21 @@ export interface PlanDef {
   id: Plan;
   /** Marketing display name. */
   name: string;
-  /** USD per month for paid tiers, 0 for free. */
+  /**
+   * USD per month for paid tiers, 0 for free. May be a decimal — the
+   * launch-discount rollout uses prices like $15.88 / $24.88.
+   */
   priceUsd: number;
+  /**
+   * Pre-discount USD price. Render with a strikethrough above
+   * `priceUsd` and a "Save NN%" badge. Set to `null` for the free
+   * tier and any tier with no advertised discount.
+   */
+  originalPriceUsd: number | null;
   /** PHP per month for paid tiers, 0 for free. Centavos × 100 lives in the env override. */
   pricePhp: number;
+  /** Pre-discount PHP price for the strikethrough render. `null` when no discount. */
+  originalPricePhp: number | null;
   /** Short marketing line. */
   blurb: string;
   /** Feature bullets shown on /dashboard/billing. */
@@ -45,23 +61,34 @@ function paymongoCentavosFor(plan: "OPERATOR" | "DESK", priceUsd: number): numbe
     const parsed = Number.parseInt(envOverride, 10);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
-  return priceUsd * USD_TO_PHP * 100; // PHP → centavos
+  // priceUsd may be a decimal (e.g. 15.88). Multiply through to centavos
+  // and round so we never send a non-integer to PayMongo (their API
+  // returns 400 on fractional centavo amounts).
+  return Math.round(priceUsd * USD_TO_PHP * 100); // PHP → centavos
 }
 
-const operatorUsd = 24;
-const deskUsd = 79;
+// Live launch-discount prices. Free stays free; paid tiers price
+// below psychological round numbers so the strikethrough originals
+// sell the saving without being unbelievably steep.
+const operatorUsd = 15.88;
+const operatorOriginalUsd = 29;
+const deskUsd = 24.88;
+const deskOriginalUsd = 49;
 
 export const PLANS: Record<Plan, PlanDef> = {
   RECON: {
     id: "RECON",
     name: "Recon",
     priceUsd: 0,
+    originalPriceUsd: null,
     pricePhp: 0,
+    originalPricePhp: null,
     blurb: "Run autopsies. Get a feel.",
     features: [
       "5 trade autopsies / month",
       "Basic structural read",
       "Auto journal (limited)",
+      "Global market news (delayed)",
       "Ads enabled",
     ],
     stripePriceId: undefined,
@@ -71,13 +98,15 @@ export const PLANS: Record<Plan, PlanDef> = {
     id: "OPERATOR",
     name: "Operator",
     priceUsd: operatorUsd,
-    pricePhp: operatorUsd * USD_TO_PHP,
+    originalPriceUsd: operatorOriginalUsd,
+    pricePhp: Math.round(operatorUsd * USD_TO_PHP),
+    originalPricePhp: Math.round(operatorOriginalUsd * USD_TO_PHP),
     blurb: "For active retail traders.",
     features: [
       "Unlimited autopsies",
       "Smart-money decoder",
       "Psychology + tilt guard",
-      "Exchange automation (1 venue)",
+      "Live global news (X · TV · wires)",
       "Priority queue · zero ads",
     ],
     stripePriceId: env.stripe.priceOperator,
@@ -87,7 +116,9 @@ export const PLANS: Record<Plan, PlanDef> = {
     id: "DESK",
     name: "Desk",
     priceUsd: deskUsd,
-    pricePhp: deskUsd * USD_TO_PHP,
+    originalPriceUsd: deskOriginalUsd,
+    pricePhp: Math.round(deskUsd * USD_TO_PHP),
+    originalPricePhp: Math.round(deskOriginalUsd * USD_TO_PHP),
     blurb: "Prop firms, teams, power users.",
     features: [
       "Everything in Operator",
@@ -100,6 +131,16 @@ export const PLANS: Record<Plan, PlanDef> = {
     paymongoCentavos: paymongoCentavosFor("DESK", deskUsd),
   },
 };
+
+/**
+ * Compute the rounded-down savings percentage for a paid plan, given
+ * its `priceUsd` and `originalPriceUsd`. Returns 0 for tiers without
+ * a discount. Used to render the "Save NN%" badge.
+ */
+export function discountPercent(plan: PlanDef): number {
+  if (!plan.originalPriceUsd || plan.originalPriceUsd <= plan.priceUsd) return 0;
+  return Math.floor(((plan.originalPriceUsd - plan.priceUsd) / plan.originalPriceUsd) * 100);
+}
 
 /** Resolve a Stripe price id back to our Plan enum. Used by webhook handlers. */
 export function planFromStripePriceId(priceId: string | null | undefined): Plan | null {

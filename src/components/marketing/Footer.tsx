@@ -33,7 +33,7 @@ export function Footer() {
           <FCol title="Modules">
             <Link href="/dashboard/upload">Autopsy</Link>
             <Link href="/dashboard/journal">Journal</Link>
-            <Link href="/dashboard/automation">Automation</Link>
+            <Link href="/dashboard/news">News</Link>
             <Link href="/dashboard/learn">Learn</Link>
           </FCol>
           <FCol title="Resources">

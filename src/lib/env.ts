@@ -24,9 +24,6 @@ const paymongoWebhook = process.env.PAYMONGO_WEBHOOK_SECRET;
 const paymongoPriceOperatorPhp = process.env.PAYMONGO_PRICE_OPERATOR_PHP;
 const paymongoPriceDeskPhp = process.env.PAYMONGO_PRICE_DESK_PHP;
 
-const exchangeEncryptionKey = process.env.EXCHANGE_ENCRYPTION_KEY;
-const bingxBaseUrl = process.env.BINGX_BASE_URL;
-
 const resendKey = process.env.RESEND_API_KEY;
 const emailFrom = process.env.EMAIL_FROM_ADDRESS;
 
@@ -108,13 +105,6 @@ export const env = {
     endpoint: s3Endpoint,
     publicUrl: s3PublicUrl,
   },
-  exchange: {
-    // True once we have a key to encrypt API secrets with. The connect
-    // route refuses to persist credentials in production without it.
-    enabled: Boolean(exchangeEncryptionKey),
-    encryptionKey: exchangeEncryptionKey,
-    bingxBaseUrl,
-  },
   email: {
     // True once Resend is configured. When disabled, every send() call
     // logs the email and returns success — the welcome / autopsy-ready
@@ -138,8 +128,7 @@ export const isFullyConfigured =
   env.openai.enabled &&
   // At least ONE billing rail. PH-first deploys may run PayMongo alone;
   // global deploys may run Stripe alone; both is fine too.
-  (env.stripe.enabled || env.paymongo.enabled) &&
-  env.exchange.enabled;
+  (env.stripe.enabled || env.paymongo.enabled);
 
 /** Boolean for clients — true when at least one subsystem is missing. */
 export const isDemoMode = !isFullyConfigured;
@@ -172,7 +161,6 @@ if (process.env.NODE_ENV === "production") {
   }
   if (env.stripe.enabled && !env.stripe.webhookEnabled) missing.push("STRIPE_WEBHOOK_SECRET");
   if (env.paymongo.enabled && !env.paymongo.webhookEnabled) missing.push("PAYMONGO_WEBHOOK_SECRET");
-  if (!env.exchange.enabled) missing.push("EXCHANGE_ENCRYPTION_KEY");
   if (!env.email.enabled) missing.push("RESEND_API_KEY");
   if (missing.length > 0) {
     // Use console.error so it shows up on Vercel / Railway / Render
