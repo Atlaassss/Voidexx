@@ -102,6 +102,12 @@ function parseVerdict(raw: string): VerdictRead {
     concepts: Array.isArray(r.concepts)
       ? (r.concepts as unknown[]).filter((c): c is string => typeof c === "string").slice(0, 12)
       : [],
+    next_actions: Array.isArray(r.next_actions)
+      ? ((r.next_actions as Array<Record<string, unknown>>)
+          .map(parseNextAction)
+          .filter((a): a is NonNullable<VerdictRead["next_actions"]>[number] => a !== null)
+          .slice(0, 6))
+      : undefined,
   };
 }
 
@@ -115,6 +121,26 @@ function parseFlag(v: Record<string, unknown>): AutopsyFlag | null {
     label,
     tone: (VALID_TONES.has(tone) ? tone : "amber") as AutopsyFlag["tone"],
     confidence: typeof v.confidence === "number" ? Math.max(0, Math.min(1, v.confidence)) : 0.5,
+  };
+}
+
+function parseNextAction(
+  v: Record<string, unknown>,
+): NonNullable<VerdictRead["next_actions"]>[number] | null {
+  const label = stringOr(v.label, "");
+  const rationale = stringOr(v.rationale, "");
+  const tone = stringOr(v.tone, "amber");
+  if (!label) return null;
+  const safeTone = (VALID_TONES.has(tone) ? tone : "amber") as
+    | "green"
+    | "amber"
+    | "red"
+    | "violet"
+    | "cyan";
+  return {
+    label: label.slice(0, 220),
+    rationale: rationale.slice(0, 280),
+    tone: safeTone,
   };
 }
 

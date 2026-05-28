@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Bot,
   BookOpen,
   Brain,
   CreditCard,
   LayoutDashboard,
   LineChart,
+  Newspaper,
   NotebookPen,
   Settings,
   Share2,
@@ -22,19 +22,19 @@ import { cn } from "@/lib/utils";
 const NAV: { href: string; label: string; icon: LucideIcon; group: string }[] = [
   { href: "/dashboard", label: "Command", icon: LayoutDashboard, group: "Operate" },
   { href: "/dashboard/upload", label: "Autopsy", icon: Upload, group: "Operate" },
+  { href: "/dashboard/news", label: "News", icon: Newspaper, group: "Operate" },
   { href: "/dashboard/journal", label: "Journal", icon: NotebookPen, group: "Operate" },
   { href: "/dashboard/analytics", label: "Analytics", icon: LineChart, group: "Operate" },
   { href: "/dashboard/psychology", label: "Psychology", icon: Brain, group: "Mind" },
   { href: "/dashboard/leaderboards", label: "Leaderboards", icon: Trophy, group: "Mind" },
-  { href: "/dashboard/automation", label: "Automation", icon: Bot, group: "Trade" },
-  { href: "/dashboard/learn", label: "Learn", icon: BookOpen, group: "Trade" },
+  { href: "/dashboard/learn", label: "Learn", icon: BookOpen, group: "Mind" },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, group: "Account" },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard, group: "Account" },
   { href: "/dashboard/referrals", label: "Referrals", icon: Share2, group: "Account" },
   { href: "/dashboard/admin", label: "Admin", icon: Shield, group: "Admin" },
 ];
 
-const GROUPS = ["Operate", "Mind", "Trade", "Account", "Admin"] as const;
+const GROUPS = ["Operate", "Mind", "Account", "Admin"] as const;
 
 export function SidebarNav() {
   const path = usePathname();

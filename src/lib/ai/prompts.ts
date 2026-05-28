@@ -58,7 +58,10 @@ OUTPUT: STRICT JSON ONLY. Schema:
   "flags": [
     { "key": string, "label": string, "tone": "red"|"amber"|"violet"|"green"|"cyan", "confidence": number }
   ],
-  "concepts": [string]
+  "concepts": [string],
+  "next_actions": [
+    { "label": string, "rationale": string, "tone": "green"|"amber"|"red"|"violet"|"cyan" }
+  ]
 }
 
 RULES:
@@ -70,7 +73,11 @@ RULES:
   - tone red = critical mistake; amber = warning; violet = subtle/structural insight; green = correct decision; cyan = informational.
   - "key" should be a short snake_case slug (e.g. "revenge", "liquidity_grab", "premium_short", "trap_fill", "fomo", "late_entry", "fvg_ignored", "fear_exit", "patient_entry", "size_appropriate").
   - "confidence" 0..1.
-- "concepts": 3-8 slugs, choose from this set when applicable: liquidity-grab, asia-high, london-open, ny-overlap, bos, choch, order-block, fvg, premium-discount, inducement, stop-hunt, equal-highs, equal-lows, sell-side-draw, buy-side-draw, mitigation-block, breaker-block.`;
+- "concepts": 3-8 slugs, choose from this set when applicable: liquidity-grab, asia-high, london-open, ny-overlap, bos, choch, order-block, fvg, premium-discount, inducement, stop-hunt, equal-highs, equal-lows, sell-side-draw, buy-side-draw, mitigation-block, breaker-block.
+- "next_actions": 3-5 ordered, imperative-voice steps the trader should take next. First item = most urgent.
+  - "label": short imperative (e.g. "Wait for 1H CHOCH below 67,500 before re-shorting"). Max 110 chars.
+  - "rationale": one sentence explaining why.
+  - "tone": red = stop doing something; amber = caution; green = do this; violet = study/journal; cyan = monitor.`;
 
 export function buildVerdictUserPrompt(structureJson: string, userNotes?: string) {
   let body = `STRUCTURE_JSON:\n${structureJson}`;

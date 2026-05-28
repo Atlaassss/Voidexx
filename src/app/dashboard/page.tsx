@@ -1,12 +1,12 @@
 import { Topbar } from "@/components/dash/Topbar";
 import { Panel } from "@/components/dash/Panel";
 import { Sparkline } from "@/components/dash/Sparkline";
+import { NewsRail } from "@/components/dash/NewsRail";
 import {
   ArrowDownRight,
   ArrowUpRight,
   Brain,
   Crosshair,
-  Flame,
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
@@ -109,14 +109,8 @@ export default function CommandCenter() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Panel title="Smart-money trap tracker" meta="last 14 days">
-            <ul className="space-y-2 font-mono text-[12px]">
-              <Trap sym="BTC" tf="1H" type="Asia high sweep" hit />
-              <Trap sym="ETH" tf="15M" type="Equal lows raid" />
-              <Trap sym="XAU" tf="4H" type="Inducement low" hit />
-              <Trap sym="EUR" tf="1H" type="London open trap" />
-              <Trap sym="SOL" tf="5M" type="Stop hunt → reversal" hit />
-            </ul>
+          <Panel title="Global market news" meta="X · TV · wires · crypto">
+            <NewsRail />
           </Panel>
 
           <Panel title="Recent autopsies" meta="3 / 5 free" className="xl:col-span-2">
@@ -286,26 +280,6 @@ function Directive({
       </div>
       <div className="mt-0.5 font-display text-base tracking-wide">{title}</div>
       <div className="text-sm text-void-700">{body}</div>
-    </li>
-  );
-}
-
-function Trap({ sym, tf, type, hit }: { sym: string; tf: string; type: string; hit?: boolean }) {
-  return (
-    <li className="flex items-center gap-3 border-l-2 border-void-300 pl-3">
-      <span className="text-void-700">{sym}</span>
-      <span className="text-void-600">{tf}</span>
-      <span className="ml-2 text-void-900">{type}</span>
-      <span
-        className={`ml-auto inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] uppercase tracking-widest2 ${
-          hit
-            ? "border-signal-green/40 bg-signal-green/[0.08] text-signal-green"
-            : "border-void-300 text-void-700"
-        }`}
-      >
-        {hit ? <Flame className="h-3 w-3" /> : null}
-        {hit ? "hit" : "watching"}
-      </span>
     </li>
   );
 }

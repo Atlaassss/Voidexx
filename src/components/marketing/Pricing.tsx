@@ -8,7 +8,12 @@ type Currency = "USD" | "PHP";
 
 interface Tier {
   name: string;
+  /** Pre-discount price string, rendered with strikethrough. null = free / no discount. */
+  originalPrices: Record<Currency, string | null>;
+  /** Live price string. */
   prices: Record<Currency, { amount: string; sub: string }>;
+  /** Pre-computed savings %, 0 means hide the badge. */
+  discountPercent: number;
   blurb: string;
   features: string[];
   cta: string;
@@ -19,18 +24,25 @@ interface Tier {
 // because this is a server-rendered marketing page and we don't want to
 // pull the env-coupled PLANS dict into the marketing bundle. The
 // flat-rate USD→PHP conversion is the same (×56) used in plans.ts.
+//
+// Phase 9: launch-discount pricing. The strikethrough originalPrices
+// sit above the live prices and the green "Save NN%" badge sells the
+// urgency without resorting to fake countdowns.
 const TIERS: Tier[] = [
   {
     name: "Recon",
+    originalPrices: { USD: null, PHP: null },
     prices: {
       USD: { amount: "$0", sub: "/forever" },
       PHP: { amount: "₱0", sub: "/forever" },
     },
+    discountPercent: 0,
     blurb: "Run autopsies. Get a feel.",
     features: [
       "5 trade autopsies / month",
       "Basic structural read",
       "Auto journal (limited)",
+      "Global market news (delayed)",
       "Ads enabled",
     ],
     cta: "Start free",
@@ -38,16 +50,18 @@ const TIERS: Tier[] = [
   },
   {
     name: "Operator",
+    originalPrices: { USD: "$29", PHP: "₱1,624" },
     prices: {
-      USD: { amount: "$24", sub: "/month" },
-      PHP: { amount: "₱1,344", sub: "/month" },
+      USD: { amount: "$15.88", sub: "/month" },
+      PHP: { amount: "₱889", sub: "/month" },
     },
+    discountPercent: 45, // floor((29 - 15.88) / 29 * 100)
     blurb: "For active retail traders.",
     features: [
       "Unlimited autopsies",
       "Full smart-money decoder",
       "Psychology + tilt guard",
-      "Exchange automation (1 venue)",
+      "Live global news (X · TV · wires)",
       "Priority queue · zero ads",
     ],
     cta: "Go Operator",
@@ -55,10 +69,12 @@ const TIERS: Tier[] = [
   },
   {
     name: "Desk",
+    originalPrices: { USD: "$49", PHP: "₱2,744" },
     prices: {
-      USD: { amount: "$79", sub: "/month" },
-      PHP: { amount: "₱4,424", sub: "/month" },
+      USD: { amount: "$24.88", sub: "/month" },
+      PHP: { amount: "₱1,393", sub: "/month" },
     },
+    discountPercent: 49, // floor((49 - 24.88) / 49 * 100)
     blurb: "Prop firms, teams, power users.",
     features: [
       "Everything in Operator",
@@ -85,11 +101,17 @@ export function Pricing() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-          <h2 className="display-crush max-w-3xl text-5xl sm:text-7xl">
-            Three tiers.
-            <br />
-            <span className="editorial text-signal-amber">No fake urgency.</span>
-          </h2>
+          <div>
+            <h2 className="display-crush max-w-3xl text-5xl sm:text-7xl">
+              Three tiers.
+              <br />
+              <span className="editorial text-signal-amber">Launch discount live.</span>
+            </h2>
+            <div className="mt-3 inline-flex items-center gap-2 border border-signal-green/50 bg-signal-green/[0.06] px-2 py-1 font-mono text-[10px] uppercase tracking-widest2 text-signal-green">
+              <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-signal-green" />
+              Founders pricing · save up to 49%
+            </div>
+          </div>
 
           {/* Currency toggle. Defaults to USD; PH visitors can flip to PHP
               and see the GCash/Maya prices that get charged on PayMongo. */}
@@ -112,6 +134,7 @@ export function Pricing() {
         <div className="mt-14 grid grid-cols-1 gap-px bg-void-300/70 lg:grid-cols-3">
           {TIERS.map((t, i) => {
             const p = t.prices[currency];
+            const wasPrice = t.originalPrices[currency];
             return (
               <div
                 key={i}
@@ -130,17 +153,35 @@ export function Pricing() {
                 <h3 className="mt-2 font-display text-3xl tracking-wide">{t.name}</h3>
                 <p className="mt-1 text-sm text-void-700">{t.blurb}</p>
 
-                <div className="mt-8 flex items-baseline gap-1">
-                  <span
-                    className={`font-display text-6xl tracking-wide ${
-                      t.highlight ? "text-signal-green" : "text-void-900"
-                    }`}
-                  >
-                    {p.amount}
-                  </span>
-                  <span className="font-mono text-[11px] uppercase tracking-widest2 text-void-700">
-                    {p.sub}
-                  </span>
+                {/* Price stack — strikethrough original, live price, save chip */}
+                <div className="mt-8">
+                  {wasPrice && t.discountPercent > 0 && (
+                    <div className="flex items-baseline gap-2 font-mono text-[12px] text-void-700">
+                      <span className="line-through decoration-signal-red/70 decoration-[2px]">
+                        {wasPrice}
+                      </span>
+                      <span className="chip border-signal-red/40 bg-signal-red/[0.08] text-signal-red">
+                        −{t.discountPercent}%
+                      </span>
+                    </div>
+                  )}
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span
+                      className={`font-display text-6xl tracking-wide ${
+                        t.highlight ? "text-signal-green" : "text-void-900"
+                      }`}
+                    >
+                      {p.amount}
+                    </span>
+                    <span className="font-mono text-[11px] uppercase tracking-widest2 text-void-700">
+                      {p.sub}
+                    </span>
+                  </div>
+                  {wasPrice && t.discountPercent > 0 && (
+                    <div className="mt-1 font-mono text-[10px] uppercase tracking-widest2 text-signal-amber">
+                      Founders pricing · ends at public launch
+                    </div>
+                  )}
                 </div>
 
                 <ul className="mt-8 space-y-3 text-sm">

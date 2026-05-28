@@ -60,6 +60,17 @@ export interface VerdictRead {
   rebuy_zone: string | null;
   flags: AutopsyFlag[];
   concepts: string[];
+  /**
+   * Optional model-supplied next-action list. When the model omits or
+   * malforms this, scoring.ts synthesises actions deterministically
+   * from flags + rebuy_zone + improvement so the UI always renders
+   * something useful.
+   */
+  next_actions?: Array<{
+    label: string;
+    rationale: string;
+    tone: "green" | "amber" | "red" | "violet" | "cyan";
+  }>;
 }
 
 /** Cost telemetry stamped on every Autopsy row. */

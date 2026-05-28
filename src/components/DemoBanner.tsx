@@ -12,7 +12,6 @@ export function DemoBanner() {
   if (!env.s3.enabled) missing.push("uploads");
   if (!env.openai.enabled) missing.push("ai");
   if (!env.stripe.enabled && !env.paymongo.enabled) missing.push("billing");
-  if (!env.exchange.enabled) missing.push("exchange");
   if (!env.admin.enabled) missing.push("admin");
   if (!env.email.enabled) missing.push("email");
 

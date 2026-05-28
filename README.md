@@ -19,10 +19,14 @@ for AI, payments, exchange wiring and admin to plug into.
 | Marketing site | ✅ | Hero + animated terminal, ticker, live demo, features, social proof, pricing, FAQ, footer |
 | Sticky ad rail (free tier) | ✅ | Hides for paid users, dismissible, lg+ only |
 | Dashboard shell | ✅ | Sidebar (lg+) + mobile bottom nav + reusable Topbar |
-| Command Center | ✅ | KPIs w/ sparklines, equity curve, AI directives, trap tracker, recent autopsies |
+| Command Center | ✅ | KPIs w/ sparklines, equity curve, AI directives, global news rail, recent autopsies |
 | Trade Autopsy upload | ✅ | Drag-drop, presigned upload w/ progress, 4-phase pipeline, full report from `/api/autopsy` |
-| Journal / Analytics / Psychology / Automation / Leaderboards / Learn / Settings / Billing | ✅ | Each route has rich content, not blank stubs |
-| Prisma schema | ✅ | Users, trades, autopsies, journals, psych, exchanges, payments, automation logs, ads, referrals |
+| Autopsy: win-prob + risk + next actions (Phase 9) | ✅ | Win probability (0..1), risk band (LOW/MEDIUM/HIGH/EXTREME), ordered next-action list — derived deterministically in `lib/ai/scoring.ts` |
+| Global news feed (Phase 9) | ✅ | `/api/news` + `/dashboard/news`; X (Twitter), TV (CNBC/BBC/Bloomberg/Al Jazeera), wires (Reuters/Bloomberg/AP), crypto (CoinDesk/The Block) — filterable by medium |
+| Launch-discount pricing (Phase 9) | ✅ | Recon $0 · Operator $15.88 (was $29) · Desk $24.88 (was $49). Strikethrough originals + "−NN%" chip; PHP via PayMongo |
+| Journal / Analytics / Psychology / News / Leaderboards / Learn / Settings / Billing | ✅ | Each route has rich content, not blank stubs |
+| Automation removed (Phase 9) | ✅ | `/dashboard/automation`, `/api/exchange/*`, `lib/exchange/*`, `lib/crypto.ts` deleted; auto-trading is intentionally not a product feature |
+| Prisma schema | ✅ | Users, trades, autopsies, journals, psych, exchanges, payments, automation logs, ads, referrals (Exchange/Automation tables retained but unused) |
 | Initial migration SQL | ✅ | `prisma/migrations/20260522120000_init/migration.sql`, ready for `prisma migrate deploy` |
 | Auth (Clerk) | ✅ | Middleware-protected dashboard + API, themed `/sign-in` & `/sign-up`, `<UserButton />` in topbar |
 | Demo mode | ✅ | App boots without ANY env vars; banner declares which subsystems are unwired |
@@ -31,10 +35,8 @@ for AI, payments, exchange wiring and admin to plug into.
 | API surface | ✅ | `/api/uploads`, `/api/autopsy` real (auth + zod + quota + DB persistence + streaming); `/api/autopsy/[id]` reads persisted reports |
 | Real AI vision pipeline | ✅ | Streams progress over NDJSON; cost-tracked in `Autopsy.costMicros` |
 | Stripe billing | ✅ | Real Checkout, webhook → plan upgrade, customer portal, cost-tracked Payment rows; demo-mode shows `Stripe · demo` chip |
-| PayMongo billing (PH rail) | ✅ | GCash · Maya · GrabPay redirect flow via PaymentIntent + signed webhook; PHP pricing toggle on marketing; expiry cron sweeps abandoned intents |
-| Exchange wiring | ✅ | BingX read-only API connect/probe/refresh; AES-256-GCM credential vault; risk engine primitives; automation dashboard wired to live balance |
+| PayMongo billing (PH rail) | ✅ | GCash · Maya · GrabPay redirect flow via PaymentIntent + signed webhook; PHP pricing toggle on marketing; expiry cron sweeps abandoned intents; in-app activation guide on `/dashboard/billing` |
 | GCash / Maya / PayPal | ✅ | GCash + Maya + GrabPay shipped via PayMongo (Phase 7.1); PayPal still deferred |
-| Live order placement | ✅ | 2FA consent gate, risk engine check, paper/live split, audit-logged |
 | Admin panel | ✅ | Role-gated route group, user management, audit log, AI cost dashboard |
 | Webhook idempotency | ✅ | `WebhookEvent` table, claim-before-process pattern on Stripe webhook |
 | Vercel Cron (quota reset) | ✅ | Monthly RECON quota bulk reset via `/api/cron/quota-reset` |
@@ -330,6 +332,15 @@ prisma/
 
 **Phase 7.5 — Growth (Discord + push)** — deferred
 - Discord OAuth + webhook bridge, web push notifications. Orthogonal to the growth foundation; cleaner as a focused follow-up PR.
+
+**Phase 9 — Reshape: better autopsy, news, drop automation, launch pricing** ✅ shipped (this PR)
+- **Autopsy → win prob + risk + next actions** — `AutopsyResponse` carries `winProbability` (0..1, "if you follow the corrected plan"), `riskLevel` (LOW / MEDIUM / HIGH / EXTREME), and `nextActions` (3-5 ordered, imperative-voice steps with rationale + tone). All three derived deterministically in `lib/ai/scoring.ts` from the structure + verdict + score. The verdict prompt now asks the model for `next_actions` directly; if the model omits them, scoring synthesises a fallback list from the worst red flag + rebuy zone + concept tags. UploadClient renders a `ProbabilityRiskStrip` (split panel: prob bar + risk band) and a numbered `NextActionsPanel` directly under the score. Mock archetypes ship curated next-action lists for demo mode; `GET /api/autopsy/[id]` re-derives at read time.
+- **Automation removed** — `/dashboard/automation`, `/api/exchange/{order,consent,connect,[id]}`, `lib/exchange/*`, `lib/crypto.ts` deleted. Sidebar / mobile-nav / footer / FAQ / plan feature bullets all updated. Auto-trading is intentionally not a Voidexx feature; the engine reads charts and writes the post-mortem, the trader stays in the chair. Prisma `ExchangeConnection` / `AutomationLog` / `Venue` retained to avoid a destructive migration.
+- **Global market news feed** — `lib/news.ts` with a curated headline pool spanning Reuters, Bloomberg, Bloomberg TV, CNBC, BBC, Al Jazeera, AP, X (Twitter — verified handles like @elonmusk / @WatcherGuru / @DeItaone / @unusual_whales), CoinDesk, The Block, Decrypt across MACRO/FED/CRYPTO/FX/EQUITY/COMMODITY/GEOPOLITICS/ON_CHAIN. Deterministic per-UTC-hour rotation so SSR + client renders stay aligned. `/api/news` (GET, filterable by `medium=WIRE|TV|SOCIAL|CRYPTO`, `category`, `source`, `limit`), `/dashboard/news` (filter chips, refresh, relative-time, bias dot, impact 1-5 indicator, verified ✓), `NewsRail` panel on Command Center showing top-6 by impact.
+- **Launch-discount pricing** — `PLANS.{originalPriceUsd, originalPricePhp}` drives strikethrough was-prices with a red `−NN%` chip across `/` (`Pricing.tsx`) and `/dashboard/billing` (`PlanCard`). Prices: Recon $0 (forever) · Operator $15.88 (was $29, save 45%) · Desk $24.88 (was $49, save 49%). PHP via PayMongo: ₱889 / ₱1,393 (USD × 56, override per-tier with `PAYMONGO_PRICE_*_PHP` in centavos).
+- **PayMongo activation surface** — `PaymongoSetupGuide` client component on `/dashboard/billing` walks the merchant through the 7-step flow (sign-up → activate → bank → keys → webhook → migrate → smoke test) with copy-to-clipboard webhook URL and external-link buttons to the PayMongo dashboard + API reference. Renders only when the env isn't fully wired; collapses once both `PAYMONGO_SECRET_KEY` + `PAYMONGO_WEBHOOK_SECRET` are present.
+- **Steering file** — `.kiro/steering/voidexx-handoff.md` carries the persistent project context, aesthetic invariants, current-phase notes, and the canonical PayMongo wiring order so future sessions don't have to re-derive any of it.
+
 
 ---
 

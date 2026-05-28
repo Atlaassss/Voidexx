@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireUser, asResponse } from "@/lib/auth";
 import { tryGetDb } from "@/lib/db";
 import type { AutopsyResponse, AutopsyFlag } from "@/lib/api/contracts";
+import { deriveWinProbability, deriveRiskLevel, deriveNextActions } from "@/lib/ai/scoring";
+import type { StructureRead, VerdictRead } from "@/lib/ai/types";
 
 export const runtime = "nodejs";
 
@@ -47,16 +49,55 @@ export async function GET(
     confidence: 0.7,
   }));
 
+  // Re-derive Phase-9 signals (winProbability, riskLevel, nextActions)
+  // from the persisted structure + reconstructed verdict shape. We
+  // don't store these directly because (a) they're cheap to recompute
+  // and (b) their definition can evolve in scoring.ts without needing
+  // a backfill migration.
+  const concepts = (row.concepts as string[]) ?? [];
+  const verdictRead: VerdictRead = {
+    verdict: row.verdict,
+    summary: row.summary,
+    improvement: row.improvement,
+    rebuy_zone: row.rebuyZone ?? null,
+    flags,
+    concepts,
+  };
+  // structureJson can be null in older rows (pre-Phase-9). Fall back to
+  // a minimal stub so deriveRiskLevel/deriveWinProbability still work
+  // — they treat unknown fields as the worst-case (low confidence,
+  // missing trade marks).
+  const structureRead: StructureRead =
+    (row.structureJson as unknown as StructureRead | null) ?? {
+      symbol: null,
+      timeframe: null,
+      direction: null,
+      range: null,
+      candles_visible: 0,
+      key_zones: [],
+      structure_events: [],
+      trade_marks: { entry: null, stop: null, target: null },
+      session_context: null,
+      confidence: 0.5,
+    };
+
+  const winProbability = deriveWinProbability(structureRead, verdictRead, row.score);
+  const riskLevel = deriveRiskLevel(structureRead, verdictRead, row.score);
+  const nextActions = deriveNextActions(structureRead, verdictRead, riskLevel);
+
   const response: AutopsyResponse = {
     id: row.id,
     tradeId: row.tradeId,
     score: row.score,
+    winProbability,
+    riskLevel,
+    nextActions,
     verdict: row.verdict,
     summary: row.summary,
     improvement: row.improvement,
     rebuyZone: row.rebuyZone ?? undefined,
     flags,
-    concepts: row.concepts as string[],
+    concepts,
     structure: (row.structureJson as Record<string, unknown> | null) ?? undefined,
     cost: {
       microUsd: row.costMicros,

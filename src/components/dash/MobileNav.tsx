@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, LayoutDashboard, NotebookPen, Upload, User } from "lucide-react";
+import { LayoutDashboard, Newspaper, NotebookPen, Upload, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/dashboard", label: "Cmd", icon: LayoutDashboard },
   { href: "/dashboard/upload", label: "Scan", icon: Upload },
+  { href: "/dashboard/news", label: "News", icon: Newspaper },
   { href: "/dashboard/journal", label: "Log", icon: NotebookPen },
-  { href: "/dashboard/automation", label: "Auto", icon: Bot },
   { href: "/dashboard/settings", label: "Me", icon: User },
 ];
 

@@ -15,7 +15,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import type { AutopsyResponse, AutopsyFlag } from "@/lib/api/contracts";
+import type { AutopsyResponse, AutopsyFlag, NextAction, RiskLevel } from "@/lib/api/contracts";
 
 type Phase =
   | "idle"
@@ -644,6 +644,14 @@ function Report({ data }: { data: AutopsyResponse }) {
         </div>
       </div>
 
+      {/* Phase 9 — win probability + risk level + next actions */}
+      <ProbabilityRiskStrip
+        winProbability={data.winProbability}
+        riskLevel={data.riskLevel}
+      />
+
+      <NextActionsPanel actions={data.nextActions} riskLevel={data.riskLevel} />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Block icon={ShieldAlert} title="What you did" body={data.summary} tone="red" />
         <Block icon={Crosshair} title="Improvement plan" body={data.improvement} tone="green" />
@@ -721,4 +729,197 @@ function Block({
       <p className="mt-2 text-sm leading-relaxed text-void-800">{body}</p>
     </div>
   );
+}
+
+// ----------------------------------------------------------------------------
+// Phase 9 — win probability + risk level + next actions
+//
+// These three signals are surfaced directly under the score so a user
+// can answer the only three questions that matter after a loss:
+//
+//   1. If I had followed the corrected plan, would it have won?
+//   2. How dangerous was what I just did?
+//   3. What do I do next?
+// ----------------------------------------------------------------------------
+
+function ProbabilityRiskStrip({
+  winProbability,
+  riskLevel,
+}: {
+  winProbability: number;
+  riskLevel: RiskLevel;
+}) {
+  const probPct = Math.round(winProbability * 100);
+  const probClass =
+    probPct >= 75
+      ? "text-signal-green"
+      : probPct >= 60
+        ? "text-signal-cyan"
+        : probPct >= 45
+          ? "text-signal-amber"
+          : "text-signal-red";
+
+  const risk = riskMeta(riskLevel);
+
+  return (
+    <div className="grid grid-cols-1 gap-px bg-void-300/60 sm:grid-cols-2">
+      <div className="bg-void-50/60 p-5">
+        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+          <span>Win probability</span>
+          <span className="text-void-700">if you follow the plan</span>
+        </div>
+        <div className="mt-3 flex items-baseline gap-2">
+          <span className={`font-display text-6xl leading-none ${probClass}`}>{probPct}%</span>
+          <span className="font-mono text-[11px] text-void-700">expected hit rate</span>
+        </div>
+        <div className="mt-3 h-1.5 w-full bg-void-300/60">
+          <div
+            className={`h-full transition-all ${
+              probPct >= 75
+                ? "bg-signal-green"
+                : probPct >= 60
+                  ? "bg-signal-cyan"
+                  : probPct >= 45
+                    ? "bg-signal-amber"
+                    : "bg-signal-red"
+            }`}
+            style={{ width: `${probPct}%` }}
+          />
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-void-700">
+          Forecasts the win rate of the corrected setup, not the trade you just took. Anchored on
+          the discipline score with confluence and flag adjustments.
+        </p>
+      </div>
+
+      <div className={`relative bg-void-50/60 p-5 ${risk.outline}`}>
+        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest2 text-void-700">
+          <span>Risk level</span>
+          <ShieldAlert className={`h-3.5 w-3.5 ${risk.text}`} />
+        </div>
+        <div className={`mt-3 font-display text-6xl leading-none tracking-wide ${risk.text}`}>
+          {riskLevel}
+        </div>
+        <div className={`mt-3 inline-flex items-center gap-2 border px-2 py-0.5 ${risk.chip}`}>
+          <span className={`h-1.5 w-1.5 ${risk.dot}`} />
+          <span className="font-mono text-[10px] uppercase tracking-widest2">
+            {risk.tagline}
+          </span>
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-void-700">{risk.body}</p>
+      </div>
+    </div>
+  );
+}
+
+function NextActionsPanel({
+  actions,
+  riskLevel,
+}: {
+  actions: NextAction[];
+  riskLevel: RiskLevel;
+}) {
+  if (!actions || actions.length === 0) return null;
+  const risk = riskMeta(riskLevel);
+  return (
+    <div className="border border-void-300/70 bg-void-100/30 p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Crosshair className={`h-4 w-4 ${risk.text}`} />
+          <h3 className="font-display text-2xl tracking-wide">Next actions</h3>
+        </div>
+        <span className="chip border-void-300/70 text-void-700">
+          {actions.length} step{actions.length === 1 ? "" : "s"} · ordered by urgency
+        </span>
+      </div>
+      <ol className="mt-4 space-y-3">
+        {actions.map((a, i) => {
+          const tone = nextActionTone(a.tone);
+          return (
+            <li
+              key={i}
+              className={`relative grid grid-cols-[auto_1fr] gap-4 border-l-2 ${tone.border} bg-void-0/40 p-4`}
+            >
+              <span
+                className={`grid h-7 w-7 shrink-0 place-items-center border ${tone.border} ${tone.text} font-mono text-[11px]`}
+              >
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div>
+                <div className={`font-display text-base leading-snug tracking-wide ${tone.text}`}>
+                  {a.label}
+                </div>
+                {a.rationale && (
+                  <p className="mt-1 text-[12px] leading-relaxed text-void-700">{a.rationale}</p>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function riskMeta(level: RiskLevel): {
+  text: string;
+  outline: string;
+  chip: string;
+  dot: string;
+  tagline: string;
+  body: string;
+} {
+  switch (level) {
+    case "LOW":
+      return {
+        text: "text-signal-green",
+        outline: "border-l-2 border-signal-green/40",
+        chip: "border-signal-green/40 text-signal-green",
+        dot: "bg-signal-green",
+        tagline: "structurally clean",
+        body: "Multi-confluence setup, controlled R, plan-aligned. Repeat this exact entry pattern.",
+      };
+    case "MEDIUM":
+      return {
+        text: "text-signal-amber",
+        outline: "border-l-2 border-signal-amber/40",
+        chip: "border-signal-amber/40 text-signal-amber",
+        dot: "bg-signal-amber",
+        tagline: "fixable with tweaks",
+        body: "Setup was valid but a soft flag was present. Tighten the entry trigger and continue at baseline size.",
+      };
+    case "HIGH":
+      return {
+        text: "text-signal-red",
+        outline: "border-l-2 border-signal-red/40",
+        chip: "border-signal-red/40 text-signal-red",
+        dot: "bg-signal-red",
+        tagline: "danger zone",
+        body: "Multiple warning flags or weak structural backing. Halve size and journal each entry trigger before continuing.",
+      };
+    case "EXTREME":
+      return {
+        text: "text-signal-red",
+        outline: "border-l-2 border-signal-red/60 ring-1 ring-signal-red/20",
+        chip: "border-signal-red/60 bg-signal-red/[0.08] text-signal-red",
+        dot: "bg-signal-red animate-pulse-dot",
+        tagline: "stop trading now",
+        body: "Revenge / FOMO / no-stop pattern detected. Cut size 75% for the next 5 trades. Capital preservation over setup quality.",
+      };
+  }
+}
+
+function nextActionTone(tone: NextAction["tone"]): { border: string; text: string } {
+  switch (tone) {
+    case "green":
+      return { border: "border-signal-green/60", text: "text-signal-green" };
+    case "amber":
+      return { border: "border-signal-amber/60", text: "text-signal-amber" };
+    case "red":
+      return { border: "border-signal-red/60", text: "text-signal-red" };
+    case "violet":
+      return { border: "border-signal-violet/60", text: "text-signal-violet" };
+    case "cyan":
+      return { border: "border-signal-cyan/60", text: "text-signal-cyan" };
+  }
 }
