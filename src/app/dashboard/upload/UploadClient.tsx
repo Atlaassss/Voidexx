@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { AutopsyResponse, AutopsyFlag } from "@/lib/api/contracts";
+import { ShareAutopsyButton } from "@/components/dash/ShareAutopsyButton";
 
 type Phase =
   | "idle"
@@ -603,6 +604,12 @@ function Report({ data }: { data: AutopsyResponse }) {
           </span>
         )}
         <span className="chip">id · {data.id}</span>
+        <span className="ml-auto">
+          <ShareAutopsyButton
+            autopsyId={data.id}
+            demoMode={Boolean(data.mock)}
+          />
+        </span>
       </div>
 
       <div className="grid grid-cols-1 gap-px bg-void-300/60 sm:grid-cols-3">

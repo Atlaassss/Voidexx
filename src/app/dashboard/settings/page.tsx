@@ -2,6 +2,7 @@ import { Topbar } from "@/components/dash/Topbar";
 import { Panel } from "@/components/dash/Panel";
 import { getSessionUser } from "@/lib/auth";
 import { env } from "@/lib/env";
+import { previewMode } from "@/lib/preview";
 import { SettingsToggles } from "./SettingsToggles";
 import { SettingsActions } from "./SettingsActions";
 
@@ -21,7 +22,7 @@ export default async function SettingsPage() {
             <Field label="Email" value={user?.email ?? "—"} />
             <Field label="Time zone" value="UTC+08:00 · Asia/Manila" />
             <Field label="Default symbol" value="BTC / USDT" />
-            {isDemo && (
+            {isDemo && !previewMode && (
               <div className="mt-4 border border-signal-amber/40 bg-signal-amber/[0.06] p-3 font-mono text-[10px] uppercase tracking-widest2 text-signal-amber">
                 Demo session · profile is shared & read-only
               </div>
